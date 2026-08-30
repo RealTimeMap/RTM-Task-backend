@@ -3,6 +3,7 @@
 config/config.yaml
 
 .git
+.github
 .gitignore
 .idea
 *.md
