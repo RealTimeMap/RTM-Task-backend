@@ -1,0 +1,15 @@
+# Конфиг с паролем базы и ключом smtp: в образ не попадает,
+# на сервере монтируется через volume.
+config/config.yaml
+
+.git
+.gitignore
+.idea
+*.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Артефакты локальной сборки
+*.exe
+tmp/

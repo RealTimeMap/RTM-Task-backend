@@ -1,0 +1,74 @@
+# Сервис задач RTM-Task.
+#
+# Разворачивается независимо от фронтенда: у них разные образы и разные
+# compose-файлы, общее — только домен task.realtimemap.ru и сеть web.
+#
+# Запуск:
+#   docker compose up -d --build
+
+services:
+  rtm-task:
+    image: ghcr.io/realtimemap/rtm-task:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rtm-task
+    restart: always
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+        loki-retries: "3"
+    labels:
+      - "traefik.enable=true"
+
+      # CORS preflight. Фронт живёт на том же домене, но запросы с
+      # localhost при разработке против прод-бэкенда тоже должны проходить.
+      - "traefik.http.routers.rtm-task-options.rule=Host(`task.realtimemap.ru`) && (PathPrefix(`/api/v1`) || PathPrefix(`/socket.io`)) && Method(`OPTIONS`)"
+      - "traefik.http.routers.rtm-task-options.entrypoints=websecure"
+      - "traefik.http.routers.rtm-task-options.priority=200"
+      - "traefik.http.routers.rtm-task-options.service=rtm-task"
+      - "traefik.http.routers.rtm-task-options.middlewares=cors-headers@file"
+      - "traefik.http.routers.rtm-task-options.tls=true"
+
+      # REST API. Личность подставляет forward auth в auth-service:
+      # сервис доверяет заголовкам X-User-*, потому что снаружи он
+      # недостижим — вся защита держится на этом.
+      - "traefik.http.routers.rtm-task-api.rule=Host(`task.realtimemap.ru`) && PathPrefix(`/api/v1`)"
+      - "traefik.http.routers.rtm-task-api.entrypoints=websecure"
+      - "traefik.http.routers.rtm-task-api.priority=100"
+      - "traefik.http.routers.rtm-task-api.service=rtm-task"
+      - "traefik.http.routers.rtm-task-api.middlewares=cors-headers@file,auth-check@file"
+      - "traefik.http.routers.rtm-task-api.tls=true"
+
+      # Socket.IO. Аутентификация та же: заголовки проставляет forward auth
+      # на polling-рукопожатии, а websocket-апгрейд наследует сессию.
+      - "traefik.http.routers.rtm-task-socket.rule=Host(`task.realtimemap.ru`) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.rtm-task-socket.entrypoints=websecure"
+      - "traefik.http.routers.rtm-task-socket.priority=100"
+      - "traefik.http.routers.rtm-task-socket.service=rtm-task"
+      - "traefik.http.routers.rtm-task-socket.middlewares=cors-headers@file,auth-check@file"
+      - "traefik.http.routers.rtm-task-socket.tls=true"
+
+      # Health — публичный, без авторизации: его дёргает мониторинг.
+      - "traefik.http.routers.rtm-task-health.rule=Host(`task.realtimemap.ru`) && Path(`/health`) && Method(`GET`)"
+      - "traefik.http.routers.rtm-task-health.entrypoints=websecure"
+      - "traefik.http.routers.rtm-task-health.priority=110"
+      - "traefik.http.routers.rtm-task-health.service=rtm-task"
+      - "traefik.http.routers.rtm-task-health.tls=true"
+
+      - "traefik.http.services.rtm-task.loadbalancer.server.port=8080"
+    volumes:
+      # Конфиг с паролем базы и ключом smtp живёт на сервере,
+      # в образ не попадает.
+      - ./config/config.yaml:/app/config/config.yaml:ro
+    networks:
+      - web
+      - service-network
+
+networks:
+  web:
+    external: true
+  service-network:
+    external: true
+    name: service-network
