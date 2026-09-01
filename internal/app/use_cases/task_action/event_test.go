@@ -22,10 +22,15 @@ func (p *recordingPublisher) PublishTask(_ context.Context, event TaskEvent) {
 // recordingNotifier запоминает отправленные уведомления.
 type recordingNotifier struct {
 	notices []AssignmentNotice
+	reworks []ReworkNotice
 }
 
 func (n *recordingNotifier) NotifyAssignment(_ context.Context, notice AssignmentNotice) {
 	n.notices = append(n.notices, notice)
+}
+
+func (n *recordingNotifier) NotifyRework(_ context.Context, notice ReworkNotice) {
+	n.reworks = append(n.reworks, notice)
 }
 
 // stubStaff отдаёт сотрудника по идентификатору.

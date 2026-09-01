@@ -55,7 +55,7 @@ const actorKey = "rtm.actor"
 //   - tasks:unsubscribe отписка от событий по исполнителю
 //
 // Server → Client:
-//   - taskCreated, taskUpdated, taskStatusChanged,
+//   - taskCreated, taskUpdated, taskStatusChanged, taskReworked,
 //     taskAssigned, taskUnassigned, taskDeleted
 func InitTaskNamespace(s *Server) {
 	ns := s.io.Of(TaskNamespace, nil)

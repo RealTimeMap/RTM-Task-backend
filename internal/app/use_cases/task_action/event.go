@@ -19,6 +19,7 @@ const (
 	EventTaskCreated       = "taskCreated"
 	EventTaskUpdated       = "taskUpdated"
 	EventTaskStatusChanged = "taskStatusChanged"
+	EventTaskReworked      = "taskReworked"
 	EventTaskAssigned      = "taskAssigned"
 	EventTaskUnassigned    = "taskUnassigned"
 	EventTaskDeleted       = "taskDeleted"

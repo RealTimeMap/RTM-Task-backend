@@ -72,6 +72,7 @@ func MustContainer(cfg *config.Config, db *gorm.DB, log *zap.Logger) *Container 
 		ListTasks:    task_action.NewListTasksHandler(taskService, log),
 		UpdateTask:   task_action.NewUpdateTaskHandler(taskService, publisher, log),
 		ChangeStatus: task_action.NewChangeStatusHandler(taskService, publisher, log),
+		SendToRework: task_action.NewSendToReworkHandler(taskService, staffService, publisher, notifier, log),
 		AssignTask:   task_action.NewAssignTaskHandler(taskService, staffService, publisher, notifier, log),
 		UnassignTask: task_action.NewUnassignTaskHandler(taskService, publisher, log),
 		DeleteTask:   task_action.NewDeleteTaskHandler(taskService, publisher, log),

@@ -16,6 +16,15 @@ type AssignmentNotice struct {
 	Task      task.Task
 }
 
+// ReworkNotice — письмо о том, что завершённую задачу вернули в работу.
+// Замечание передаётся отдельным полем: получателю важно не то, что
+// статус сменился, а что именно нужно доделать.
+type ReworkNotice struct {
+	Recipient role.Staff
+	Task      task.Task
+	Note      string
+}
+
 // Notifier — порт уведомлений.
 //
 // Реализуется инфраструктурой (сейчас — клиентом smtp-service).
@@ -23,6 +32,7 @@ type AssignmentNotice struct {
 // работать с задачами.
 type Notifier interface {
 	NotifyAssignment(ctx context.Context, notice AssignmentNotice)
+	NotifyRework(ctx context.Context, notice ReworkNotice)
 }
 
 // notifyAssignment отправляет уведомление, если notifier подключён.
@@ -34,4 +44,12 @@ func notifyAssignment(ctx context.Context, notifier Notifier, notice AssignmentN
 		return
 	}
 	notifier.NotifyAssignment(ctx, notice)
+}
+
+// notifyRework отправляет уведомление о доработке, если notifier подключён.
+func notifyRework(ctx context.Context, notifier Notifier, notice ReworkNotice) {
+	if notifier == nil {
+		return
+	}
+	notifier.NotifyRework(ctx, notice)
 }

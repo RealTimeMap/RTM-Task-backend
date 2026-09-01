@@ -160,3 +160,99 @@ func TestApplyDetailsRejectsUnknownPriority(t *testing.T) {
 		t.Fatal("expected error for unknown priority")
 	}
 }
+
+func closedTask() *Task {
+	obj := assignedTask(ReviewStatus)
+	if err := obj.ChangeStatus(CompleteStatus); err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+func TestSendToReworkReturnsClosedTaskToWork(t *testing.T) {
+	obj := closedTask()
+
+	if err := obj.SendToRework("Не учтён пустой список", 3); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if obj.Status != WorkingStatus {
+		t.Fatalf("status = %q, want %q", obj.Status, WorkingStatus)
+	}
+	if obj.ClosedAt != nil {
+		t.Fatal("ClosedAt must be cleared when task returns to work")
+	}
+	if !obj.IsInRework() {
+		t.Fatal("task must be marked as being in rework")
+	}
+	if obj.ReworkNote != "Не учтён пустой список" {
+		t.Fatalf("ReworkNote = %q", obj.ReworkNote)
+	}
+	if obj.ReworkByID == nil || *obj.ReworkByID != 3 {
+		t.Fatal("ReworkByID must point at the author of the note")
+	}
+}
+
+func TestSendToReworkWithoutAssigneeGoesToNew(t *testing.T) {
+	obj := closedTask()
+	obj.AssigneeID = nil
+
+	if err := obj.SendToRework("Переделать вёрстку", 3); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Работать некому — задача ждёт назначения, а не висит «в работе».
+	if obj.Status != NewStatus {
+		t.Fatalf("status = %q, want %q", obj.Status, NewStatus)
+	}
+}
+
+func TestSendToReworkRejectsOpenTask(t *testing.T) {
+	for _, status := range []Status{NewStatus, WorkingStatus, ReviewStatus} {
+		obj := assignedTask(status)
+		if err := obj.SendToRework("Дополнить тесты", 3); err == nil {
+			t.Fatalf("status %q: open task must not be sent to rework", status)
+		}
+	}
+}
+
+func TestSendToReworkRequiresNote(t *testing.T) {
+	for _, note := range []string{"", "   ", "нет"} {
+		obj := closedTask()
+		if err := obj.SendToRework(note, 3); err == nil {
+			t.Fatalf("note %q: must be rejected", note)
+		}
+		// Отказ не должен менять состояние задачи.
+		if obj.Status != CompleteStatus {
+			t.Fatalf("note %q: status changed to %q on error", note, obj.Status)
+		}
+	}
+}
+
+func TestClosingAgainClearsReworkNote(t *testing.T) {
+	obj := closedTask()
+	if err := obj.SendToRework("Поправить отступы", 3); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := obj.ChangeStatus(ReviewStatus); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := obj.ChangeStatus(CompleteStatus); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Замечание относилось к прошлому кругу — оно закрыто вместе с задачей.
+	if obj.IsInRework() || obj.ReworkNote != "" || obj.ReworkByID != nil {
+		t.Fatal("rework note must be cleared once the task is accepted")
+	}
+}
+
+func TestNewTypesAreValid(t *testing.T) {
+	for _, value := range []Type{BugType, FeatureType, FixType, RefactorType, UpdateType} {
+		if !value.IsValid() {
+			t.Fatalf("type %q must be valid", value)
+		}
+	}
+	if Type("chore").IsValid() {
+		t.Fatal("unknown type must be rejected")
+	}
+}

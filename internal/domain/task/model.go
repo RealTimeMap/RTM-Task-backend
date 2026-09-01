@@ -1,6 +1,7 @@
 package task
 
 import (
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -9,14 +10,16 @@ import (
 type Type string
 
 const (
-	BugType     Type = "bug"
-	FeatureType Type = "feature"
-	FixType     Type = "fix"
+	BugType      Type = "bug"
+	FeatureType  Type = "feature"
+	FixType      Type = "fix"
+	RefactorType Type = "refactor"
+	UpdateType   Type = "update"
 )
 
 func (t Type) IsValid() bool {
 	switch t {
-	case BugType, FeatureType, FixType:
+	case BugType, FeatureType, FixType, RefactorType, UpdateType:
 		return true
 	default:
 		return false
@@ -45,15 +48,19 @@ func (s Status) IsValid() bool {
 
 func (s Status) String() string { return string(s) }
 
-// IsFinal сообщает, что из статуса нет исходящих переходов.
+// IsFinal сообщает, что статус закрывает задачу. Из complete есть один
+// выход — возврат в работу через SendToRework, поэтому «финальный» здесь
+// означает «закрытая», а не «тупиковая» вершина графа.
 func (s Status) IsFinal() bool { return s == CompleteStatus }
 
 // allowedTransitions описывает жизненный цикл задачи. Это правило домена,
 // поэтому таблица переходов лежит рядом с моделью, а не в use case.
 var allowedTransitions = map[Status][]Status{
-	NewStatus:      {WorkingStatus},
-	WorkingStatus:  {ReviewStatus, NewStatus},
-	ReviewStatus:   {CompleteStatus, WorkingStatus},
+	NewStatus:     {WorkingStatus},
+	WorkingStatus: {ReviewStatus, NewStatus},
+	ReviewStatus:  {CompleteStatus, WorkingStatus},
+	// Из complete обычного перехода нет: вернуть задачу в работу можно
+	// только через SendToRework, который требует описания доработки.
 	CompleteStatus: {},
 }
 
@@ -104,6 +111,13 @@ type Task struct {
 
 	Version  int        `gorm:"not null;default:1"`
 	ClosedAt *time.Time `gorm:"index"`
+
+	// Доработка: заполняется при возврате завершённой задачи в работу и
+	// живёт до следующего закрытия. Хранится сырым markdown — как и
+	// Description, разметку разбирает фронтенд.
+	ReworkNote string     `gorm:"type:text"`
+	ReworkByID *uint      `gorm:"index"`
+	ReworkAt   *time.Time `gorm:"index"`
 }
 
 func (Task) TableName() string { return "tasks" }
@@ -144,10 +158,51 @@ func (t *Task) ChangeStatus(target Status) error {
 	if target.IsFinal() {
 		now := time.Now()
 		t.ClosedAt = &now
+		// Замечание относилось к прошлому кругу работы: раз задачу снова
+		// приняли, оно закрыто вместе с ней.
+		t.clearRework()
 	} else {
 		t.ClosedAt = nil
 	}
 	return nil
+}
+
+// IsInRework сообщает, что у задачи есть незакрытое замечание.
+func (t *Task) IsInRework() bool { return t.ReworkAt != nil }
+
+// SendToRework возвращает завершённую задачу в работу с описанием того,
+// что нужно доделать. Это единственный выход из complete: обычный переход
+// туда запрещён таблицей жизненного цикла, потому что возврат без
+// объяснения причины оставляет исполнителя без задания.
+func (t *Task) SendToRework(note string, authorID uint) error {
+	if !t.IsClosed() {
+		return ErrNotClosed(t.ID, t.Status.String())
+	}
+	note = strings.TrimSpace(note)
+	if err := validateReworkNote(note); err != nil {
+		return err
+	}
+	// Возврат идёт к тому, кто задачу делал. Без исполнителя работать
+	// некому, поэтому задача уходит в new и ждёт назначения.
+	target := WorkingStatus
+	if !t.IsAssigned() {
+		target = NewStatus
+	}
+
+	now := time.Now()
+	t.Status = target
+	t.ClosedAt = nil
+	t.ReworkNote = note
+	t.ReworkByID = &authorID
+	t.ReworkAt = &now
+	return nil
+}
+
+// clearRework снимает замечание о доработке.
+func (t *Task) clearRework() {
+	t.ReworkNote = ""
+	t.ReworkByID = nil
+	t.ReworkAt = nil
 }
 
 // Assign назначает исполнителя. Закрытую задачу переназначать нельзя.

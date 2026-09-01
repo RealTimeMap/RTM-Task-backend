@@ -31,6 +31,7 @@ func InitTaskHandler(rg *gin.RouterGroup, useCases *task_action.Application, log
 		tasks.GET("/:id", h.Get)
 		tasks.PATCH("/:id", h.Update)
 		tasks.PATCH("/:id/status", h.ChangeStatus)
+		tasks.POST("/:id/rework", h.SendToRework)
 		tasks.PUT("/:id/assignee", h.Assign)
 		tasks.DELETE("/:id/assignee", h.Unassign)
 		tasks.DELETE("/:id", h.Delete)
@@ -165,6 +166,42 @@ func (h *TaskHandler) ChangeStatus(c *gin.Context) {
 		Actor:  actor,
 		TaskID: id,
 		Status: req.Status,
+	})
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.NewTaskResponse(result))
+}
+
+// SendToRework возвращает завершённую задачу в работу с замечанием.
+//
+// Отдельный маршрут, а не статус в PATCH /status: переход из complete
+// требует обязательного описания доработки, и это видно по контракту.
+func (h *TaskHandler) SendToRework(c *gin.Context) {
+	actor, err := utilhttp.ActorFrom(c.Request.Context())
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	id, err := parseIDParam(c, "id")
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	var req dto.SendToReworkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		middleware.AbortWithBindingError(c, err, h.logger)
+		return
+	}
+
+	result, err := h.useCases.SendToRework.Handle(c.Request.Context(), task_action.SendToReworkCommand{
+		Actor:  actor,
+		TaskID: id,
+		Note:   req.Note,
 	})
 	if err != nil {
 		middleware.HandleError(c, err, h.logger)

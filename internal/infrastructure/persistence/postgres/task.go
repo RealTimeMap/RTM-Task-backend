@@ -115,8 +115,13 @@ func (r *TaskRepository) Update(ctx context.Context, obj *task.Task, expectedVer
 			"priority":    obj.Priority,
 			"assignee_id": obj.AssigneeID,
 			"closed_at":   obj.ClosedAt,
-			"version":     obj.Version,
-			"updated_at":  time.Now(),
+			// Поля доработки перечислены явно: карта колонок не выводится
+			// из структуры, и забытое поле молча не сохранится.
+			"rework_note":  obj.ReworkNote,
+			"rework_by_id": obj.ReworkByID,
+			"rework_at":    obj.ReworkAt,
+			"version":      obj.Version,
+			"updated_at":   time.Now(),
 		})
 
 	if result.Error != nil {

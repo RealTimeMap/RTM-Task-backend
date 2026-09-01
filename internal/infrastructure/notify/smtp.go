@@ -30,6 +30,11 @@ const (
 
 	// Шаблон письма о назначении задачи. Заведён в smtp-service.
 	assignmentTemplate = "newTask"
+
+	// Отдельного шаблона для доработки в smtp-service нет, поэтому письмо
+	// уходит тем же newTask: набор переменных у него тот же, а замечание
+	// добавляется в описание. Заведут свой — поменяется одна константа.
+	reworkTemplate = assignmentTemplate
 )
 
 // Config — настройки клиента почтового сервиса.
@@ -124,6 +129,55 @@ func (n *SMTPNotifier) NotifyAssignment(ctx context.Context, notice task_action.
 	}
 }
 
+// NotifyRework сообщает исполнителю, что задачу вернули с замечанием.
+//
+// Как и уведомление о назначении, доставка на исход операции не влияет:
+// задача уже возвращена в работу.
+func (n *SMTPNotifier) NotifyRework(ctx context.Context, notice task_action.ReworkNotice) {
+	if notice.Recipient.Email == nil || *notice.Recipient.Email == "" {
+		n.logger.Debug("rework notice skipped: recipient has no email",
+			zap.Uint("staff_id", notice.Recipient.ID),
+			zap.Uint("task_id", notice.Task.ID),
+		)
+		return
+	}
+
+	payload := sendEmailRequest{
+		TemplateID: reworkTemplate,
+		To:         *notice.Recipient.Email,
+		Data:       n.reworkData(notice),
+		IdempotencyKey: fmt.Sprintf(
+			"rtm-task:rework:%d:%d:%d",
+			notice.Task.ID, notice.Recipient.ID, notice.Task.Version,
+		),
+	}
+
+	if err := n.send(ctx, payload); err != nil {
+		n.logger.Warn("rework notice not sent",
+			zap.Uint("task_id", notice.Task.ID),
+			zap.Uint("staff_id", notice.Recipient.ID),
+			zap.Error(err),
+		)
+	}
+}
+
+// reworkData собирает переменные письма о доработке.
+//
+// Заголовок и описание переопределяются так, чтобы получатель с первой
+// строки видел: это возврат, а не новое назначение.
+func (n *SMTPNotifier) reworkData(notice task_action.ReworkNotice) map[string]any {
+	data := n.assignmentData(task_action.AssignmentNotice{
+		Recipient: notice.Recipient,
+		Task:      notice.Task,
+	})
+
+	data["title"] = "Доработка: " + notice.Task.Title
+	data["description"] = "Задачу вернули в работу.\n\nЧто нужно доделать:\n" + notice.Note
+	data["reworkNote"] = notice.Note
+
+	return data
+}
+
 // assignmentData собирает переменные шаблона.
 //
 // Шаблон подставляет значения как есть, поэтому сюда идут подписи для
@@ -184,7 +238,7 @@ func (n *SMTPNotifier) send(ctx context.Context, payload sendEmailRequest) error
 		return nil
 	}
 
-	n.logger.Info("assignment notice queued",
+	n.logger.Info("notice queued",
 		zap.String("email_id", result.EmailID),
 		zap.Bool("duplicate", result.Duplicate),
 	)
@@ -219,6 +273,10 @@ func typeTitle(taskType task.Type) string {
 		return "Фича"
 	case task.FixType:
 		return "Фикс"
+	case task.RefactorType:
+		return "Рефакторинг"
+	case task.UpdateType:
+		return "Обновление"
 	default:
 		return string(taskType)
 	}

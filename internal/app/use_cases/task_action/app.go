@@ -8,6 +8,7 @@ type Application struct {
 	ListTasks    *ListTasksHandler
 	UpdateTask   *UpdateTaskHandler
 	ChangeStatus *ChangeStatusHandler
+	SendToRework *SendToReworkHandler
 	AssignTask   *AssignTaskHandler
 	UnassignTask *UnassignTaskHandler
 	DeleteTask   *DeleteTaskHandler

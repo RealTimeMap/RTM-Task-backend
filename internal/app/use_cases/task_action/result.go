@@ -21,6 +21,11 @@ type TaskResult struct {
 	ClosedAt    *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+
+	// Доработка: непустая, пока замечание не снято закрытием задачи.
+	ReworkNote string
+	ReworkByID *uint
+	ReworkAt   *time.Time
 }
 
 func toTaskResult(obj *task.Task) TaskResult {
@@ -40,6 +45,9 @@ func toTaskResult(obj *task.Task) TaskResult {
 		ClosedAt:    obj.ClosedAt,
 		CreatedAt:   obj.CreatedAt,
 		UpdatedAt:   obj.UpdatedAt,
+		ReworkNote:  obj.ReworkNote,
+		ReworkByID:  obj.ReworkByID,
+		ReworkAt:    obj.ReworkAt,
 	}
 }
 

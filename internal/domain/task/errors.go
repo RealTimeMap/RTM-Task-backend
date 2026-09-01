@@ -61,6 +61,13 @@ var (
 		)
 	}
 
+	ErrNotClosed = func(id uint, status string) error {
+		return apperror.NewConflictError(
+			"status",
+			fmt.Sprintf("task %d is in status %q, only a completed task can be sent to rework", id, status),
+		)
+	}
+
 	ErrVersionConflict = func(id uint) error {
 		return apperror.NewConflictError(
 			"version",
@@ -83,7 +90,7 @@ var (
 	ErrInvalidType = func(value string) error {
 		return apperror.NewValidationError(
 			"type",
-			"must be one of: bug, feature, fix",
+			"must be one of: bug, feature, fix, refactor, update",
 			"value_error.invalid_choice",
 			value,
 		)
@@ -95,6 +102,28 @@ var (
 			"must be one of: 10, 20, 30, 40",
 			"value_error.invalid_choice",
 			value,
+		)
+	}
+
+	ErrReworkNoteRequired = func() error {
+		return apperror.NewRequiredError("note")
+	}
+
+	ErrReworkNoteTooShort = func(min int) error {
+		return apperror.NewValidationError(
+			"note",
+			fmt.Sprintf("must be at least %d characters, describe what to fix", min),
+			"value_error.any_str.min_length",
+			min,
+		)
+	}
+
+	ErrReworkNoteTooLong = func(max int) error {
+		return apperror.NewValidationError(
+			"note",
+			fmt.Sprintf("must be at most %d characters", max),
+			"value_error.any_str.max_length",
+			max,
 		)
 	}
 
@@ -135,6 +164,12 @@ var (
 	ErrCloseForbidden = func() error {
 		return apperror.NewForbiddenError(
 			"only the assignee or a manager can close this task",
+		)
+	}
+
+	ErrReworkForbidden = func() error {
+		return apperror.NewForbiddenError(
+			"only the creator, the assignee or a manager can send this task to rework",
 		)
 	}
 )

@@ -14,6 +14,8 @@ const (
 	minTitleLength     = 3
 	maxTitleLength     = 300
 	maxDescriptionSize = 10000
+	minReworkNoteSize  = 5
+	maxReworkNoteSize  = 5000
 	maxTasksPerDay     = 50
 )
 
@@ -29,6 +31,11 @@ type CreateTaskParams struct {
 	Type        Type
 	Priority    Priority
 	AssigneeID  *uint
+}
+
+// ReworkParams — данные возврата завершённой задачи в работу.
+type ReworkParams struct {
+	Note string
 }
 
 type UpdateTaskParams struct {
@@ -89,6 +96,20 @@ func validateTitle(title string) error {
 func validateDescription(description string) error {
 	if len([]rune(description)) > maxDescriptionSize {
 		return apperror.NewTooLongError("description", maxDescriptionSize, len(description))
+	}
+	return nil
+}
+
+// validateReworkNote проверяет описание доработки. Пустое замечание
+// бессмысленно: исполнитель не поймёт, что от него хотят.
+func validateReworkNote(note string) error {
+	if note == "" {
+		return ErrReworkNoteRequired()
+	}
+	if length := len([]rune(note)); length < minReworkNoteSize {
+		return ErrReworkNoteTooShort(minReworkNoteSize)
+	} else if length > maxReworkNoteSize {
+		return ErrReworkNoteTooLong(maxReworkNoteSize)
 	}
 	return nil
 }

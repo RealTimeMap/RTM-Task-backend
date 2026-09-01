@@ -66,6 +66,35 @@ func (s *Service) ChangeStatus(ctx context.Context, actor role.Actor, id uint, t
 	return updated, nil
 }
 
+// SendToRework возвращает завершённую задачу в работу с замечанием.
+// Права те же, что и у закрытия: отменять принятый результат может тот,
+// кто отвечает за задачу, а не любой участник.
+func (s *Service) SendToRework(ctx context.Context, actor role.Actor, id uint, params ReworkParams) (*Task, error) {
+	obj, err := s.load(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !canEdit(obj, actor) {
+		return nil, ErrReworkForbidden()
+	}
+
+	if err := obj.SendToRework(params.Note, actor.StaffID); err != nil {
+		return nil, err
+	}
+
+	updated, err := s.save(ctx, obj)
+	if err != nil {
+		return nil, err
+	}
+
+	s.logger.Info("task sent to rework",
+		zap.Uint("task_id", updated.ID),
+		zap.String("status", updated.Status.String()),
+		zap.Uint("actor_id", actor.StaffID),
+	)
+	return updated, nil
+}
+
 // Assign назначает исполнителя задачи.
 func (s *Service) Assign(ctx context.Context, actor role.Actor, id, assigneeID uint) (*Task, error) {
 	obj, err := s.load(ctx, id)

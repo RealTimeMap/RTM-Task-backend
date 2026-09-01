@@ -20,6 +20,12 @@ type TaskResponse struct {
 	ClosedAt    *time.Time `json:"closedAt,omitempty"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	UpdatedAt   time.Time  `json:"updatedAt"`
+
+	// Замечание к доработке: пусто, пока задачу не возвращали или пока
+	// её не приняли заново.
+	ReworkNote string     `json:"reworkNote,omitempty"`
+	ReworkByID *uint      `json:"reworkById,omitempty"`
+	ReworkAt   *time.Time `json:"reworkAt,omitempty"`
 }
 
 func NewTaskResponse(result task_action.TaskResult) TaskResponse {
@@ -36,6 +42,9 @@ func NewTaskResponse(result task_action.TaskResult) TaskResponse {
 		ClosedAt:    result.ClosedAt,
 		CreatedAt:   result.CreatedAt,
 		UpdatedAt:   result.UpdatedAt,
+		ReworkNote:  result.ReworkNote,
+		ReworkByID:  result.ReworkByID,
+		ReworkAt:    result.ReworkAt,
 	}
 }
 
