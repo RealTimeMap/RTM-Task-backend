@@ -17,6 +17,7 @@ type CreateTaskCommand struct {
 	Type        string
 	Priority    int
 	AssigneeID  *uint
+	Checklist   []string
 }
 
 func (c CreateTaskCommand) Validate() error {
@@ -37,6 +38,7 @@ type TaskCreator interface {
 type CreateTaskHandler struct {
 	tasks     TaskCreator
 	staff     StaffReader
+	summaries TaskSummarizer
 	publisher EventPublisher
 	notifier  Notifier
 	logger    *zap.Logger
@@ -45,6 +47,7 @@ type CreateTaskHandler struct {
 func NewCreateTaskHandler(
 	tasks TaskCreator,
 	staff StaffReader,
+	summaries TaskSummarizer,
 	publisher EventPublisher,
 	notifier Notifier,
 	logger *zap.Logger,
@@ -52,6 +55,7 @@ func NewCreateTaskHandler(
 	return &CreateTaskHandler{
 		tasks:     tasks,
 		staff:     staff,
+		summaries: summaries,
 		publisher: publisher,
 		notifier:  notifier,
 		logger:    logger,
@@ -69,12 +73,21 @@ func (h *CreateTaskHandler) Handle(ctx context.Context, cmd CreateTaskCommand) (
 		Type:        task.Type(cmd.Type),
 		Priority:    task.Priority(cmd.Priority),
 		AssigneeID:  cmd.AssigneeID,
+		Checklist:   cmd.Checklist,
 	})
 	if err != nil {
 		return TaskResult{}, err
 	}
 
 	result := toTaskResult(obj)
+	// Чек-лист заводится вместе с задачей, и карточка должна показать
+	// его сразу: без сводки она осталась бы пустой до перезагрузки списка.
+	if h.summaries != nil {
+		if summaries, err := h.summaries.SummaryFor(ctx, []*task.Task{obj}); err == nil {
+			result = result.withSummary(summaries[obj.ID])
+		}
+	}
+
 	publish(ctx, h.publisher, TaskEvent{Name: EventTaskCreated, Task: result})
 
 	// Задачу могли сразу завести на исполнителя — для него это то же

@@ -26,6 +26,22 @@ type TaskResult struct {
 	ReworkNote string
 	ReworkByID *uint
 	ReworkAt   *time.Time
+
+	// Счётчики дочерних записей. Заполняются только там, где задача
+	// читается вместе со сводкой: события изменения статуса их не несут,
+	// и на клиенте они остаются нулями — карточка обновит их следующей
+	// загрузкой списка.
+	ChecklistTotal int
+	ChecklistDone  int
+	CommentCount   int
+}
+
+// withSummary дополняет результат счётчиками дочерних записей.
+func (r TaskResult) withSummary(summary task.Summary) TaskResult {
+	r.ChecklistTotal = summary.ChecklistTotal
+	r.ChecklistDone = summary.ChecklistDone
+	r.CommentCount = summary.CommentCount
+	return r
 }
 
 func toTaskResult(obj *task.Task) TaskResult {

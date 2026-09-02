@@ -26,6 +26,12 @@ type TaskResponse struct {
 	ReworkNote string     `json:"reworkNote,omitempty"`
 	ReworkByID *uint      `json:"reworkById,omitempty"`
 	ReworkAt   *time.Time `json:"reworkAt,omitempty"`
+
+	// Сводка по вложенным записям: карточка показывает прогресс и число
+	// реплик, не загружая их содержимое. Сами списки — отдельными ручками.
+	ChecklistTotal int `json:"checklistTotal"`
+	ChecklistDone  int `json:"checklistDone"`
+	CommentCount   int `json:"commentCount"`
 }
 
 func NewTaskResponse(result task_action.TaskResult) TaskResponse {
@@ -45,6 +51,10 @@ func NewTaskResponse(result task_action.TaskResult) TaskResponse {
 		ReworkNote:  result.ReworkNote,
 		ReworkByID:  result.ReworkByID,
 		ReworkAt:    result.ReworkAt,
+
+		ChecklistTotal: result.ChecklistTotal,
+		ChecklistDone:  result.ChecklistDone,
+		CommentCount:   result.CommentCount,
 	}
 }
 

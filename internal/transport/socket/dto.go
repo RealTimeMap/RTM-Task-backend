@@ -16,6 +16,8 @@ type listTasksPayload struct {
 	CreatorID  *uint   `json:"creatorId"`
 	AssigneeID *uint   `json:"assigneeId"`
 	Unassigned bool    `json:"unassigned"`
+	Sort       *string `json:"sort"`
+	Order      *string `json:"order"`
 	Limit      int     `json:"limit"`
 	Offset     int     `json:"offset"`
 }
@@ -72,4 +74,14 @@ func taskPayload(result task_action.TaskResult) dto.TaskResponse {
 
 func taskListPayload(result task_action.TaskListResult) dto.TaskListResponse {
 	return dto.NewTaskListResponse(result)
+}
+
+// commentPayload и checklistPayload переводят результаты use case'ов
+// в то же представление, что отдаёт HTTP.
+func commentPayload(result task_action.CommentResult) dto.CommentResponse {
+	return dto.NewCommentResponse(result)
+}
+
+func checklistPayload(result task_action.ChecklistItemResult) dto.ChecklistItemResponse {
+	return dto.NewChecklistItemResponse(result)
 }

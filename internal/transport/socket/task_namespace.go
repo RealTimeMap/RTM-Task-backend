@@ -170,6 +170,8 @@ func (s *Server) handleList(args []any) {
 		CreatorID:      query.CreatorID,
 		AssigneeID:     query.AssigneeID,
 		OnlyUnassigned: query.Unassigned,
+		Sort:           optionalString(query.Sort),
+		Order:          optionalString(query.Order),
 		Limit:          query.Limit,
 		Offset:         query.Offset,
 	})
@@ -275,6 +277,14 @@ func reply(ack sio.Ack, body map[string]any) {
 func (s *Server) replyError(ack sio.Ack, operation string, err error) {
 	s.logger.Warn("socket "+operation+" failed", zap.Error(err))
 	reply(ack, ackError(err))
+}
+
+// optionalString разворачивает необязательное поле полезной нагрузки.
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func malformedPayload(err error) error {

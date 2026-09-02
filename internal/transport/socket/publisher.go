@@ -55,3 +55,41 @@ func (p *Publisher) assigneeRooms(event task_action.TaskEvent) []sio.Room {
 
 	return rooms
 }
+
+// PublishComment рассылает изменение обсуждения задачи.
+//
+// Адресат — общий поток: обсуждение видят все, кто видит задачу, а
+// комнаты исполнителей здесь не помогают — комментарий может оставить
+// любой участник, и о нём должны узнать все открывшие задачу.
+func (p *Publisher) PublishComment(_ context.Context, event task_action.CommentEvent) {
+	if p == nil || p.server == nil {
+		return
+	}
+
+	err := p.server.io.Of(TaskNamespace, nil).
+		To(sio.Room(roomAll)).
+		Emit(event.Name, commentPayload(event.Comment))
+	if err != nil {
+		p.logger.Warn("publish comment event failed",
+			zap.String("event", event.Name),
+			zap.Error(err),
+		)
+	}
+}
+
+// PublishChecklist рассылает изменение чек-листа задачи.
+func (p *Publisher) PublishChecklist(_ context.Context, event task_action.ChecklistEvent) {
+	if p == nil || p.server == nil {
+		return
+	}
+
+	err := p.server.io.Of(TaskNamespace, nil).
+		To(sio.Room(roomAll)).
+		Emit(event.Name, checklistPayload(event.Item))
+	if err != nil {
+		p.logger.Warn("publish checklist event failed",
+			zap.String("event", event.Name),
+			zap.Error(err),
+		)
+	}
+}

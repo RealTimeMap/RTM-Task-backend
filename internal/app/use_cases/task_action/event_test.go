@@ -12,11 +12,21 @@ import (
 
 // recordingPublisher запоминает опубликованные события.
 type recordingPublisher struct {
-	events []TaskEvent
+	events     []TaskEvent
+	comments   []CommentEvent
+	checklists []ChecklistEvent
 }
 
 func (p *recordingPublisher) PublishTask(_ context.Context, event TaskEvent) {
 	p.events = append(p.events, event)
+}
+
+func (p *recordingPublisher) PublishComment(_ context.Context, event CommentEvent) {
+	p.comments = append(p.comments, event)
+}
+
+func (p *recordingPublisher) PublishChecklist(_ context.Context, event ChecklistEvent) {
+	p.checklists = append(p.checklists, event)
 }
 
 // recordingNotifier запоминает отправленные уведомления.
@@ -107,7 +117,7 @@ func TestCreatePublishesEvent(t *testing.T) {
 	created.ID = 10
 
 	publisher := &recordingPublisher{}
-	handler := NewCreateTaskHandler(&stubTasks{created: created}, staffStub, publisher, notifier, zap.NewNop())
+	handler := NewCreateTaskHandler(&stubTasks{created: created}, staffStub, nil, publisher, notifier, zap.NewNop())
 
 	_, err := handler.Handle(context.Background(), CreateTaskCommand{
 		Title: "New task",
@@ -130,7 +140,7 @@ func TestCreatePublishesEvent(t *testing.T) {
 
 func TestCreateDoesNotPublishOnValidationError(t *testing.T) {
 	publisher := &recordingPublisher{}
-	handler := NewCreateTaskHandler(&stubTasks{}, staffStub, publisher, notifier, zap.NewNop())
+	handler := NewCreateTaskHandler(&stubTasks{}, staffStub, nil, publisher, notifier, zap.NewNop())
 
 	_, err := handler.Handle(context.Background(), CreateTaskCommand{Title: "", Type: "bug"})
 	if err == nil {
@@ -219,7 +229,7 @@ func TestNilPublisherIsTolerated(t *testing.T) {
 	created := &task.Task{Title: "New task", Status: task.NewStatus, Type: task.BugType}
 	created.ID = 11
 
-	handler := NewCreateTaskHandler(&stubTasks{created: created}, staffStub, nil, nil, zap.NewNop())
+	handler := NewCreateTaskHandler(&stubTasks{created: created}, staffStub, nil, nil, nil, zap.NewNop())
 
 	// Push и уведомления отключены — операция всё равно должна выполниться.
 	if _, err := handler.Handle(context.Background(), CreateTaskCommand{
@@ -269,7 +279,7 @@ func TestCreateNotifiesOnlyWhenAssigneeSet(t *testing.T) {
 
 	notices := &recordingNotifier{}
 	handler := NewCreateTaskHandler(
-		&stubTasks{created: unassigned}, staffStub, &recordingPublisher{}, notices, zap.NewNop(),
+		&stubTasks{created: unassigned}, staffStub, nil, &recordingPublisher{}, notices, zap.NewNop(),
 	)
 
 	if _, err := handler.Handle(
@@ -288,7 +298,7 @@ func TestCreateNotifiesOnlyWhenAssigneeSet(t *testing.T) {
 	assigned.ID = 13
 
 	withAssignee := NewCreateTaskHandler(
-		&stubTasks{created: assigned}, staffStub, &recordingPublisher{}, notices, zap.NewNop(),
+		&stubTasks{created: assigned}, staffStub, nil, &recordingPublisher{}, notices, zap.NewNop(),
 	)
 
 	if _, err := withAssignee.Handle(

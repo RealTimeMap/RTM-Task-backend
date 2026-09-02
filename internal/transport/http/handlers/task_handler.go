@@ -35,6 +35,8 @@ func InitTaskHandler(rg *gin.RouterGroup, useCases *task_action.Application, log
 		tasks.PUT("/:id/assignee", h.Assign)
 		tasks.DELETE("/:id/assignee", h.Unassign)
 		tasks.DELETE("/:id", h.Delete)
+
+		initCommentRoutes(tasks, h)
 	}
 }
 
@@ -58,6 +60,7 @@ func (h *TaskHandler) Create(c *gin.Context) {
 		Type:        req.Type,
 		Priority:    req.Priority,
 		AssigneeID:  req.AssigneeID,
+		Checklist:   req.Checklist,
 	})
 	if err != nil {
 		middleware.HandleError(c, err, h.logger)
@@ -97,6 +100,8 @@ func (h *TaskHandler) List(c *gin.Context) {
 		CreatorID:      query.CreatorID,
 		AssigneeID:     query.AssigneeID,
 		OnlyUnassigned: query.Unassigned,
+		Sort:           derefString(query.Sort),
+		Order:          derefString(query.Order),
 		Limit:          query.Limit,
 		Offset:         query.Offset,
 	})
@@ -290,6 +295,16 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// derefString разворачивает необязательный параметр запроса.
+// Отсутствие значения и пустая строка для сортировки означают одно
+// и то же — «порядок по умолчанию».
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // parseIDParam читает положительный числовой параметр пути.

@@ -34,10 +34,12 @@ func MustContainer(cfg *config.Config, db *gorm.DB, log *zap.Logger) *Container 
 	// Инфраструктура: адаптеры портов домена.
 	staffRepo := postgres.NewStaffRepository(db, log)
 	taskRepo := postgres.NewTaskRepository(db, log)
+	commentRepo := postgres.NewCommentRepository(db, log)
+	checklistRepo := postgres.NewChecklistRepository(db, log)
 
 	// Домен: сервисы, знающие только о своих портах.
 	staffService := role.NewService(staffRepo, log)
-	taskService := task.NewService(taskRepo, staffService, log)
+	taskService := task.NewService(taskRepo, commentRepo, checklistRepo, staffService, log)
 
 	// Socket-сервер и publisher замкнуты друг на друга: use case'ы публикуют
 	// события через publisher, а publisher рассылает их сокетам, которые
@@ -67,15 +69,18 @@ func MustContainer(cfg *config.Config, db *gorm.DB, log *zap.Logger) *Container 
 
 	// Application: use case'ы поверх доменных сервисов.
 	taskUseCases := &task_action.Application{
-		CreateTask:   task_action.NewCreateTaskHandler(taskService, staffService, publisher, notifier, log),
-		GetTask:      task_action.NewGetTaskHandler(taskService, log),
-		ListTasks:    task_action.NewListTasksHandler(taskService, log),
+		CreateTask:   task_action.NewCreateTaskHandler(taskService, staffService, taskService, publisher, notifier, log),
+		GetTask:      task_action.NewGetTaskHandler(taskService, taskService, log),
+		ListTasks:    task_action.NewListTasksHandler(taskService, taskService, log),
 		UpdateTask:   task_action.NewUpdateTaskHandler(taskService, publisher, log),
 		ChangeStatus: task_action.NewChangeStatusHandler(taskService, publisher, log),
 		SendToRework: task_action.NewSendToReworkHandler(taskService, staffService, publisher, notifier, log),
 		AssignTask:   task_action.NewAssignTaskHandler(taskService, staffService, publisher, notifier, log),
 		UnassignTask: task_action.NewUnassignTaskHandler(taskService, publisher, log),
 		DeleteTask:   task_action.NewDeleteTaskHandler(taskService, publisher, log),
+
+		Comments:  task_action.NewCommentHandler(taskService, publisher, log),
+		Checklist: task_action.NewChecklistHandler(taskService, publisher, log),
 	}
 
 	staffUseCases := &staff_action.Application{

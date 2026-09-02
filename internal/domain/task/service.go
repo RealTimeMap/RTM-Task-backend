@@ -17,6 +17,15 @@ const (
 	minReworkNoteSize  = 5
 	maxReworkNoteSize  = 5000
 	maxTasksPerDay     = 50
+
+	minCommentSize = 1
+	maxCommentSize = 5000
+
+	minChecklistTitle = 1
+	maxChecklistTitle = 300
+	// Ограничение на размер чек-листа: длинный список — признак того,
+	// что задачу пора разбивать, а не наращивать внутри одной карточки.
+	maxChecklistItems = 50
 )
 
 // StaffChecker — то, что домену задач нужно знать о сотрудниках.
@@ -31,6 +40,11 @@ type CreateTaskParams struct {
 	Type        Type
 	Priority    Priority
 	AssigneeID  *uint
+
+	// Checklist — заготовка списка дел, заполняемая прямо в форме
+	// создания: пункты обычно известны сразу, и заводить их отдельными
+	// запросами после создания задачи было бы лишним кругом.
+	Checklist []string
 }
 
 // ReworkParams — данные возврата завершённой задачи в работу.
@@ -46,17 +60,27 @@ type UpdateTaskParams struct {
 }
 
 type Service struct {
-	repo  Repository
-	staff StaffChecker
+	repo      Repository
+	comments  CommentRepository
+	checklist ChecklistRepository
+	staff     StaffChecker
 
 	logger *zap.Logger
 }
 
-func NewService(repo Repository, staff StaffChecker, logger *zap.Logger) *Service {
+func NewService(
+	repo Repository,
+	comments CommentRepository,
+	checklist ChecklistRepository,
+	staff StaffChecker,
+	logger *zap.Logger,
+) *Service {
 	return &Service{
-		repo:   repo,
-		staff:  staff,
-		logger: logger,
+		repo:      repo,
+		comments:  comments,
+		checklist: checklist,
+		staff:     staff,
+		logger:    logger,
 	}
 }
 
@@ -110,6 +134,30 @@ func validateReworkNote(note string) error {
 		return ErrReworkNoteTooShort(minReworkNoteSize)
 	} else if length > maxReworkNoteSize {
 		return ErrReworkNoteTooLong(maxReworkNoteSize)
+	}
+	return nil
+}
+
+// validateCommentBody проверяет текст комментария.
+func validateCommentBody(body string) error {
+	if body == "" {
+		return ErrCommentBodyRequired()
+	}
+	if length := len([]rune(body)); length < minCommentSize {
+		return ErrCommentBodyRequired()
+	} else if length > maxCommentSize {
+		return ErrCommentBodyTooLong(maxCommentSize)
+	}
+	return nil
+}
+
+// validateChecklistTitle проверяет текст пункта чек-листа.
+func validateChecklistTitle(title string) error {
+	if title == "" {
+		return ErrChecklistTitleRequired()
+	}
+	if len([]rune(title)) > maxChecklistTitle {
+		return ErrChecklistTitleTooLong(maxChecklistTitle)
 	}
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"RTM-Task/internal/domain/task"
+	"RTM-Task/internal/utils/apperror"
 )
 
 type TaskRepository struct {
@@ -53,7 +54,7 @@ func (r *TaskRepository) List(ctx context.Context, filter task.Filter) ([]*task.
 
 	var objs []*task.Task
 	err := query.
-		Order("priority ASC, created_at DESC").
+		Order(orderClause(filter.Sort)).
 		Limit(filter.Pagination.Limit).
 		Offset(filter.Pagination.Offset).
 		Find(&objs).Error
@@ -64,6 +65,62 @@ func (r *TaskRepository) List(ctx context.Context, filter task.Filter) ([]*task.
 
 	return objs, total, nil
 }
+
+// orderClause строит ORDER BY по доменному порядку сортировки.
+//
+// Выражение собирается из констант, а не из пришедшей строки: поле и
+// направление уже проверены доменом, но склеивать SQL с внешним вводом
+// нельзя даже после проверки.
+func orderClause(sort task.Sort) string {
+	sort = sort.Normalize()
+	if sort.IsZero() {
+		// Порядок по умолчанию: сначала важные, внутри — свежие.
+		return "priority ASC, created_at DESC"
+	}
+
+	direction := "ASC"
+	if sort.Order == task.DescOrder {
+		direction = "DESC"
+	}
+
+	var expr string
+	switch sort.Field {
+	case task.SortByCreatedAt:
+		expr = "created_at"
+	case task.SortByPriority:
+		expr = "priority"
+	case task.SortByStatus:
+		expr = statusOrderExpr
+	case task.SortByType:
+		expr = typeOrderExpr
+	default:
+		return "priority ASC, created_at DESC"
+	}
+
+	// Вторым ключом всегда id: без него страницы с одинаковыми
+	// значениями поля могли бы перемешиваться между запросами.
+	return expr + " " + direction + ", id DESC"
+}
+
+// statusOrderExpr и typeOrderExpr задают смысловой порядок вместо
+// алфавитного: по алфавиту «complete» оказался бы раньше «new», а
+// жизненный цикл идёт new → working → review → complete.
+const (
+	statusOrderExpr = `CASE status ` +
+		`WHEN 'new' THEN 1 ` +
+		`WHEN 'working' THEN 2 ` +
+		`WHEN 'review' THEN 3 ` +
+		`WHEN 'complete' THEN 4 ` +
+		`ELSE 5 END`
+
+	typeOrderExpr = `CASE type ` +
+		`WHEN 'bug' THEN 1 ` +
+		`WHEN 'feature' THEN 2 ` +
+		`WHEN 'fix' THEN 3 ` +
+		`WHEN 'refactor' THEN 4 ` +
+		`WHEN 'update' THEN 5 ` +
+		`ELSE 6 END`
+)
 
 // applyFilter переводит доменный фильтр в условия запроса.
 func (r *TaskRepository) applyFilter(query *gorm.DB, filter task.Filter) *gorm.DB {
@@ -144,14 +201,36 @@ func (r *TaskRepository) Update(ctx context.Context, obj *task.Task, expectedVer
 	return r.GetByID(ctx, obj.ID)
 }
 
+// Delete удаляет задачу вместе с её обсуждением и чек-листом.
+//
+// Дочерние записи убираются здесь, а не каскадом на уровне схемы:
+// внешних ключей у нас нет, и осиротевшие комментарии остались бы
+// в базе навсегда. Всё идёт одной транзакцией — задача без обсуждения
+// или обсуждение без задачи одинаково бессмысленны.
 func (r *TaskRepository) Delete(ctx context.Context, id uint) error {
-	result := r.db.WithContext(ctx).Delete(&task.Task{}, id)
-	if result.Error != nil {
-		r.log.Error("delete task failed", zap.Uint("id", id), zap.Error(result.Error))
-		return task.ErrDatabaseQuery("delete task", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return task.ErrTaskNotFound(id)
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Delete(&task.Task{}, id)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return task.ErrTaskNotFound(id)
+		}
+
+		if err := tx.Where("task_id = ?", id).Delete(&task.Comment{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("task_id = ?", id).Delete(&task.ChecklistItem{}).Error
+	})
+
+	if err != nil {
+		// Доменную ошибку пробрасываем как есть: это не сбой запроса,
+		// а осмысленный ответ («задачи нет»).
+		if _, ok := apperror.As(err); ok {
+			return err
+		}
+		r.log.Error("delete task failed", zap.Uint("id", id), zap.Error(err))
+		return task.ErrDatabaseQuery("delete task", err)
 	}
 	return nil
 }

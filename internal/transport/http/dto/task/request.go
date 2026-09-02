@@ -7,6 +7,11 @@ type CreateTaskRequest struct {
 	Type        string `json:"type" binding:"required,oneof=bug feature fix refactor update"`
 	Priority    int    `json:"priority" binding:"omitempty,oneof=10 20 30 40"`
 	AssigneeID  *uint  `json:"assigneeId"`
+
+	// Checklist — заготовка списка дел прямо из формы создания.
+	// Пустые строки сервер отбрасывает: незаполненное поле формы
+	// не должно превращаться в пустой пункт.
+	Checklist []string `json:"checklist" binding:"omitempty,max=50,dive,max=300"`
 }
 
 // UpdateTaskRequest — частичное обновление задачи: nil-поле означает
@@ -43,6 +48,11 @@ type ListTasksQuery struct {
 	CreatorID  *uint   `form:"creatorId"`
 	AssigneeID *uint   `form:"assigneeId"`
 	Unassigned bool    `form:"unassigned"`
-	Limit      int     `form:"limit"`
-	Offset     int     `form:"offset"`
+
+	// Сортировка: поле и направление. Пустые — порядок по умолчанию.
+	Sort  *string `form:"sort" binding:"omitempty,oneof=createdAt priority status type"`
+	Order *string `form:"order" binding:"omitempty,oneof=asc desc"`
+
+	Limit  int `form:"limit"`
+	Offset int `form:"offset"`
 }

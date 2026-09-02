@@ -68,6 +68,28 @@ var (
 		)
 	}
 
+	ErrCommentNotFound = func(id uint) error {
+		return apperror.NewNotFoundError("comment", id)
+	}
+
+	ErrChecklistItemNotFound = func(id uint) error {
+		return apperror.NewNotFoundError("checklistItem", id)
+	}
+
+	// ErrForeignChild ловит рассинхрон идентификаторов: комментарий или
+	// пункт запрашивают по чужой задаче. Отвечаем «не найдено», чтобы не
+	// раскрывать существование записи в недоступной задаче.
+	ErrForeignChild = func(kind string, id uint) error {
+		return apperror.NewNotFoundError(kind, id)
+	}
+
+	ErrChecklistLimitReached = func(limit int) error {
+		return apperror.NewConflictError(
+			"checklist",
+			fmt.Sprintf("checklist is limited to %d items, split the task instead", limit),
+		)
+	}
+
 	ErrVersionConflict = func(id uint) error {
 		return apperror.NewConflictError(
 			"version",
@@ -127,6 +149,50 @@ var (
 		)
 	}
 
+	ErrCommentBodyRequired = func() error {
+		return apperror.NewRequiredError("body")
+	}
+
+	ErrCommentBodyTooLong = func(max int) error {
+		return apperror.NewValidationError(
+			"body",
+			fmt.Sprintf("must be at most %d characters", max),
+			"value_error.any_str.max_length",
+			max,
+		)
+	}
+
+	ErrChecklistTitleRequired = func() error {
+		return apperror.NewRequiredError("title")
+	}
+
+	ErrChecklistTitleTooLong = func(max int) error {
+		return apperror.NewValidationError(
+			"title",
+			fmt.Sprintf("must be at most %d characters", max),
+			"value_error.any_str.max_length",
+			max,
+		)
+	}
+
+	ErrInvalidSortField = func(value string) error {
+		return apperror.NewValidationError(
+			"sort",
+			"must be one of: createdAt, priority, status, type",
+			"value_error.invalid_choice",
+			value,
+		)
+	}
+
+	ErrInvalidSortOrder = func(value string) error {
+		return apperror.NewValidationError(
+			"order",
+			"must be one of: asc, desc",
+			"value_error.invalid_choice",
+			value,
+		)
+	}
+
 	ErrDailyLimitReached = func(limit int) error {
 		return apperror.NewConflictError(
 			"task",
@@ -164,6 +230,24 @@ var (
 	ErrCloseForbidden = func() error {
 		return apperror.NewForbiddenError(
 			"only the assignee or a manager can close this task",
+		)
+	}
+
+	ErrCommentForbidden = func() error {
+		return apperror.NewForbiddenError(
+			"only the creator, the assignee or a manager can comment on this task",
+		)
+	}
+
+	ErrCommentEditForbidden = func() error {
+		return apperror.NewForbiddenError(
+			"only the author or a manager can change this comment",
+		)
+	}
+
+	ErrChecklistForbidden = func() error {
+		return apperror.NewForbiddenError(
+			"only the creator, the assignee or a manager can change this checklist",
 		)
 	}
 

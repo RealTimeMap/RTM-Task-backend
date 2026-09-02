@@ -12,4 +12,7 @@ type Application struct {
 	AssignTask   *AssignTaskHandler
 	UnassignTask *UnassignTaskHandler
 	DeleteTask   *DeleteTaskHandler
+
+	Comments  *CommentHandler
+	Checklist *ChecklistHandler
 }

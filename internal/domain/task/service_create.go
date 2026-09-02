@@ -57,9 +57,23 @@ func (s *Service) Create(ctx context.Context, actor role.Actor, params CreateTas
 		obj.AssigneeID = params.AssigneeID
 	}
 
+	if len(params.Checklist) > maxChecklistItems {
+		return nil, ErrChecklistLimitReached(maxChecklistItems)
+	}
+
 	created, err := s.repo.Create(ctx, obj)
 	if err != nil {
 		return nil, err
+	}
+
+	// Чек-лист заводится после задачи: пунктам нужен её идентификатор.
+	// Сбой здесь не откатывает саму задачу — она уже создана и полезна
+	// без списка, а пункты пользователь добавит вручную.
+	if _, err := s.createChecklist(ctx, created.ID, params.Checklist); err != nil {
+		s.logger.Warn("create task checklist failed",
+			zap.Uint("task_id", created.ID),
+			zap.Error(err),
+		)
 	}
 
 	s.logger.Info("task created",
