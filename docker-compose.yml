@@ -41,8 +41,29 @@ services:
       - "traefik.http.routers.rtm-task-api.middlewares=cors-headers@file,auth-check@file"
       - "traefik.http.routers.rtm-task-api.tls=true"
 
-      # Socket.IO. Аутентификация та же: заголовки проставляет forward auth
-      # на polling-рукопожатии, а websocket-апгрейд наследует сессию.
+      # Socket.IO, апгрейд до websocket.
+      #
+      # Идёт мимо forward auth намеренно. Браузер не позволяет задать
+      # заголовки в WebSocket-запросе, поэтому Authorization на апгрейде
+      # не отправляется — а auth-check пересылает в auth-service именно
+      # его (authRequestHeaders: Authorization). Токена нет, приходит
+      # 401, апгрейд срывается, клиент откатывается на long-polling и
+      # переподключается по кругу каждые несколько десятков секунд.
+      #
+      # Безопасность при этом не теряется: апгрейд возможен только для
+      # уже существующей сессии, а её создаёт polling-рукопожатие ниже —
+      # там auth-check остаётся и проставляет заголовки X-User-*.
+      # Апгрейд без валидного sid engine.io отклоняет сам.
+      - "traefik.http.routers.rtm-task-ws.rule=Host(`task.realtimemap.ru`) && PathPrefix(`/socket.io`) && Query(`transport`, `websocket`)"
+      - "traefik.http.routers.rtm-task-ws.entrypoints=websecure"
+      - "traefik.http.routers.rtm-task-ws.priority=150"
+      - "traefik.http.routers.rtm-task-ws.service=rtm-task"
+      - "traefik.http.routers.rtm-task-ws.middlewares=cors-headers@file"
+      - "traefik.http.routers.rtm-task-ws.tls=true"
+
+      # Socket.IO, рукопожатие и long-polling. Здесь личность и
+      # проверяется: forward auth подставляет заголовки X-User-*,
+      # по которым namespace разрешает участника операции.
       - "traefik.http.routers.rtm-task-socket.rule=Host(`task.realtimemap.ru`) && PathPrefix(`/socket.io`)"
       - "traefik.http.routers.rtm-task-socket.entrypoints=websecure"
       - "traefik.http.routers.rtm-task-socket.priority=100"
