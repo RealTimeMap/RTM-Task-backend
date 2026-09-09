@@ -9,6 +9,7 @@ import (
 	"RTM-Task/internal/config"
 	"RTM-Task/internal/domain/role"
 	"RTM-Task/internal/domain/task"
+	"RTM-Task/internal/infrastructure/feedback"
 	"RTM-Task/internal/infrastructure/notify"
 	"RTM-Task/internal/infrastructure/persistence/postgres"
 	"RTM-Task/internal/transport/socket"
@@ -37,9 +38,24 @@ func MustContainer(cfg *config.Config, db *gorm.DB, log *zap.Logger) *Container 
 	commentRepo := postgres.NewCommentRepository(db, log)
 	checklistRepo := postgres.NewChecklistRepository(db, log)
 
+	// Каталог багов feedback-service. Порт остаётся nil, если интеграция
+	// не настроена: домен это допускает — перечень багов пуст, а привязка
+	// отклоняется, задачи же работают как обычно.
+	var bugCatalog task.BugCatalog
+	if cfg.Feedback.Enabled() {
+		bugCatalog = feedback.NewClient(feedback.Config{
+			BaseURL: cfg.Feedback.BaseURL,
+			ApiKey:  cfg.Feedback.ApiKey,
+			Timeout: cfg.Feedback.Timeout,
+		}, log)
+		log.Info("bug catalog enabled", zap.String("base_url", cfg.Feedback.BaseURL))
+	} else {
+		log.Info("bug catalog disabled: base_url or api_key is empty")
+	}
+
 	// Домен: сервисы, знающие только о своих портах.
 	staffService := role.NewService(staffRepo, log)
-	taskService := task.NewService(taskRepo, commentRepo, checklistRepo, staffService, log)
+	taskService := task.NewService(taskRepo, commentRepo, checklistRepo, staffService, bugCatalog, log)
 
 	// Socket-сервер и publisher замкнуты друг на друга: use case'ы публикуют
 	// события через publisher, а publisher рассылает их сокетам, которые
@@ -78,6 +94,8 @@ func MustContainer(cfg *config.Config, db *gorm.DB, log *zap.Logger) *Container 
 		AssignTask:   task_action.NewAssignTaskHandler(taskService, staffService, publisher, notifier, log),
 		UnassignTask: task_action.NewUnassignTaskHandler(taskService, publisher, log),
 		DeleteTask:   task_action.NewDeleteTaskHandler(taskService, publisher, log),
+
+		Bugs:      task_action.NewBugHandler(taskService, taskService, taskService, publisher, log),
 
 		Comments:  task_action.NewCommentHandler(taskService, publisher, log),
 		Checklist: task_action.NewChecklistHandler(taskService, publisher, log),
