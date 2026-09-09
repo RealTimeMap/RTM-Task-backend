@@ -15,4 +15,7 @@ type Application struct {
 
 	Comments  *CommentHandler
 	Checklist *ChecklistHandler
+
+	// Bugs — перечень багов feedback-service и привязка их к задачам.
+	Bugs *BugHandler
 }

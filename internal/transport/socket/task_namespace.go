@@ -167,6 +167,7 @@ func (s *Server) handleList(args []any) {
 		Status:         query.Status,
 		Type:           query.Type,
 		Priority:       query.Priority,
+		Project:        query.Project,
 		CreatorID:      query.CreatorID,
 		AssigneeID:     query.AssigneeID,
 		OnlyUnassigned: query.Unassigned,

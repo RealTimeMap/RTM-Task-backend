@@ -17,10 +17,12 @@ type UpdateTaskCommand struct {
 	Description *string
 	Type        *string
 	Priority    *int
+	Project     *string
 }
 
 func (c UpdateTaskCommand) Validate() error {
-	if c.Title == nil && c.Description == nil && c.Type == nil && c.Priority == nil {
+	if c.Title == nil && c.Description == nil && c.Type == nil &&
+		c.Priority == nil && c.Project == nil {
 		return apperror.NewValidationError(
 			"body",
 			"at least one field must be provided",
@@ -62,6 +64,10 @@ func (h *UpdateTaskHandler) Handle(ctx context.Context, cmd UpdateTaskCommand) (
 	if cmd.Priority != nil {
 		priority := task.Priority(*cmd.Priority)
 		params.Priority = &priority
+	}
+	if cmd.Project != nil {
+		project := task.Project(*cmd.Project)
+		params.Project = &project
 	}
 
 	obj, err := h.tasks.Update(ctx, cmd.Actor, cmd.TaskID, params)

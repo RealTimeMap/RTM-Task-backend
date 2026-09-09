@@ -24,6 +24,11 @@ type TaskHandler struct {
 func InitTaskHandler(rg *gin.RouterGroup, useCases *task_action.Application, logger *zap.Logger) {
 	h := &TaskHandler{useCases: useCases, logger: logger}
 
+	// Перечень багов, доступных для привязки. Живёт рядом с задачами, но
+	// вне /tasks/:id: он нужен ещё до того, как задача создана — в форме,
+	// где выбирают, над каким багом заводить работу.
+	rg.GET("/bugs", h.ListBugs)
+
 	tasks := rg.Group("/tasks")
 	{
 		tasks.POST("", h.Create)
@@ -35,6 +40,11 @@ func InitTaskHandler(rg *gin.RouterGroup, useCases *task_action.Application, log
 		tasks.PUT("/:id/assignee", h.Assign)
 		tasks.DELETE("/:id/assignee", h.Unassign)
 		tasks.DELETE("/:id", h.Delete)
+
+		// Баг, над которым ведётся работа: подробности, привязка и снятие.
+		tasks.GET("/:id/bug", h.GetBug)
+		tasks.PUT("/:id/bug", h.AttachBug)
+		tasks.DELETE("/:id/bug", h.DetachBug)
 
 		initCommentRoutes(tasks, h)
 	}
@@ -59,8 +69,10 @@ func (h *TaskHandler) Create(c *gin.Context) {
 		Description: req.Description,
 		Type:        req.Type,
 		Priority:    req.Priority,
+		Project:     req.Project,
 		AssigneeID:  req.AssigneeID,
 		Checklist:   req.Checklist,
+		BugID:       req.BugID,
 	})
 	if err != nil {
 		middleware.HandleError(c, err, h.logger)
@@ -97,6 +109,7 @@ func (h *TaskHandler) List(c *gin.Context) {
 		Status:         query.Status,
 		Type:           query.Type,
 		Priority:       query.Priority,
+		Project:        query.Project,
 		CreatorID:      query.CreatorID,
 		AssigneeID:     query.AssigneeID,
 		OnlyUnassigned: query.Unassigned,
@@ -139,6 +152,7 @@ func (h *TaskHandler) Update(c *gin.Context) {
 		Description: req.Description,
 		Type:        req.Type,
 		Priority:    req.Priority,
+		Project:     req.Project,
 	})
 	if err != nil {
 		middleware.HandleError(c, err, h.logger)
@@ -295,6 +309,108 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// ListBugs отдаёт перечень багов, которые можно взять в работу.
+//
+// Завершённые и уже занятые баги сюда не попадают: их отбирает
+// feedback-service, а сервис задач только передаёт запрос дальше.
+func (h *TaskHandler) ListBugs(c *gin.Context) {
+	var query dto.ListBugsQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		middleware.AbortWithBindingError(c, err, h.logger)
+		return
+	}
+
+	results, err := h.useCases.Bugs.List(c.Request.Context(), task_action.ListBugsQuery{
+		Tag:   query.Tag,
+		Limit: query.Limit,
+	})
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.NewBugListResponse(results))
+}
+
+// GetBug отдаёт подробности бага, над которым идёт работа.
+//
+// Идентификатор бага берётся из самой задачи: показывать произвольный
+// отчёт в чужой карточке незачем.
+func (h *TaskHandler) GetBug(c *gin.Context) {
+	id, err := parseIDParam(c, "id")
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	result, err := h.useCases.Bugs.Get(c.Request.Context(), task_action.GetBugQuery{TaskID: id})
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.NewBugDetailResponse(result))
+}
+
+// AttachBug привязывает баг к задаче.
+func (h *TaskHandler) AttachBug(c *gin.Context) {
+	actor, err := utilhttp.ActorFrom(c.Request.Context())
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	id, err := parseIDParam(c, "id")
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	var req dto.AttachBugRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		middleware.AbortWithBindingError(c, err, h.logger)
+		return
+	}
+
+	result, err := h.useCases.Bugs.Attach(c.Request.Context(), task_action.AttachBugCommand{
+		Actor:  actor,
+		TaskID: id,
+		BugID:  req.BugID,
+	})
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.NewTaskResponse(result))
+}
+
+// DetachBug снимает привязку бага и возвращает его в перечень свободных.
+func (h *TaskHandler) DetachBug(c *gin.Context) {
+	actor, err := utilhttp.ActorFrom(c.Request.Context())
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	id, err := parseIDParam(c, "id")
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	result, err := h.useCases.Bugs.Detach(c.Request.Context(), task_action.DetachBugCommand{
+		Actor:  actor,
+		TaskID: id,
+	})
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.NewTaskResponse(result))
 }
 
 // derefString разворачивает необязательный параметр запроса.

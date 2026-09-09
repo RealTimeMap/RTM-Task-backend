@@ -23,6 +23,12 @@ func (s *Service) Delete(ctx context.Context, actor role.Actor, id uint) error {
 		return err
 	}
 
+	// Баг переживает задачу: раз работать над ним больше некому,
+	// он возвращается в перечень свободных и ждёт следующую задачу.
+	if obj.HasBug() {
+		s.releaseBug(ctx, id, *obj.BugID)
+	}
+
 	s.logger.Info("task deleted",
 		zap.Uint("task_id", id),
 		zap.Uint("actor_id", actor.StaffID),

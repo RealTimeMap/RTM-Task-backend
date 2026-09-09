@@ -135,7 +135,7 @@ func TestApplyDetailsOnClosedTaskIsRejected(t *testing.T) {
 	obj := &Task{Status: CompleteStatus, Title: "old"}
 	title := "new title"
 
-	if err := obj.ApplyDetails(&title, nil, nil, nil); err == nil {
+	if err := obj.ApplyDetails(&title, nil, nil, nil, nil); err == nil {
 		t.Fatal("expected error when editing closed task")
 	}
 	if obj.Title != "old" {
@@ -147,7 +147,7 @@ func TestApplyDetailsRejectsShortTitle(t *testing.T) {
 	obj := &Task{Status: NewStatus, Title: "valid title"}
 	title := "ab"
 
-	if err := obj.ApplyDetails(&title, nil, nil, nil); err == nil {
+	if err := obj.ApplyDetails(&title, nil, nil, nil, nil); err == nil {
 		t.Fatal("expected error for too short title")
 	}
 }
@@ -156,7 +156,7 @@ func TestApplyDetailsRejectsUnknownPriority(t *testing.T) {
 	obj := &Task{Status: NewStatus, Title: "valid title"}
 	priority := Priority(99)
 
-	if err := obj.ApplyDetails(nil, nil, &priority, nil); err == nil {
+	if err := obj.ApplyDetails(nil, nil, &priority, nil, nil); err == nil {
 		t.Fatal("expected error for unknown priority")
 	}
 }

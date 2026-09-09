@@ -133,6 +133,9 @@ func (r *TaskRepository) applyFilter(query *gorm.DB, filter task.Filter) *gorm.D
 	if filter.Priority != nil {
 		query = query.Where("priority = ?", *filter.Priority)
 	}
+	if filter.Project != nil {
+		query = query.Where("project = ?", *filter.Project)
+	}
 	if filter.CreatorID != nil {
 		query = query.Where("creator_id = ?", *filter.CreatorID)
 	}
@@ -170,7 +173,12 @@ func (r *TaskRepository) Update(ctx context.Context, obj *task.Task, expectedVer
 			"type":        obj.Type,
 			"status":      obj.Status,
 			"priority":    obj.Priority,
+			"project":     obj.Project,
 			"assignee_id": obj.AssigneeID,
+			// Привязка бага меняется вместе с задачей и должна уметь
+			// сбрасываться в NULL — поэтому она в этой карте, а не
+			// выводится из ненулевых полей структуры.
+			"bug_id": obj.BugID,
 			"closed_at":   obj.ClosedAt,
 			// Поля доработки перечислены явно: карта колонок не выводится
 			// из структуры, и забытое поле молча не сохранится.

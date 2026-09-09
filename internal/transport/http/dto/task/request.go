@@ -8,6 +8,14 @@ type CreateTaskRequest struct {
 	Priority    int    `json:"priority" binding:"omitempty,oneof=10 20 30 40"`
 	AssigneeID  *uint  `json:"assigneeId"`
 
+	// Project — продукт, в который направлена задача.
+	// Пусто означает проект по умолчанию.
+	Project string `json:"project" binding:"omitempty,oneof=rtm-task rtm-app"`
+
+	// BugID — баг из feedback-service, который берут в работу.
+	// Допустим только вместе с type=bug.
+	BugID *uint `json:"bugId"`
+
 	// Checklist — заготовка списка дел прямо из формы создания.
 	// Пустые строки сервер отбрасывает: незаполненное поле формы
 	// не должно превращаться в пустой пункт.
@@ -21,6 +29,12 @@ type UpdateTaskRequest struct {
 	Description *string `json:"description"`
 	Type        *string `json:"type" binding:"omitempty,oneof=bug feature fix refactor update"`
 	Priority    *int    `json:"priority" binding:"omitempty,oneof=10 20 30 40"`
+	Project     *string `json:"project" binding:"omitempty,oneof=rtm-task rtm-app"`
+}
+
+// AttachBugRequest — тело запроса на привязку бага к задаче.
+type AttachBugRequest struct {
+	BugID uint `json:"bugId" binding:"required"`
 }
 
 // ChangeStatusRequest — тело запроса на смену статуса.
@@ -45,6 +59,7 @@ type ListTasksQuery struct {
 	Status     *string `form:"status" binding:"omitempty,oneof=new working review complete"`
 	Type       *string `form:"type" binding:"omitempty,oneof=bug feature fix refactor update"`
 	Priority   *int    `form:"priority" binding:"omitempty,oneof=10 20 30 40"`
+	Project    *string `form:"project" binding:"omitempty,oneof=rtm-task rtm-app"`
 	CreatorID  *uint   `form:"creatorId"`
 	AssigneeID *uint   `form:"assigneeId"`
 	Unassigned bool    `form:"unassigned"`
@@ -55,4 +70,10 @@ type ListTasksQuery struct {
 
 	Limit  int `form:"limit"`
 	Offset int `form:"offset"`
+}
+
+// ListBugsQuery — параметры перечня багов, доступных для привязки.
+type ListBugsQuery struct {
+	Tag   string `form:"tag" binding:"omitempty,oneof=feature ui logic"`
+	Limit int    `form:"limit"`
 }

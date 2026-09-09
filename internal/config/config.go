@@ -41,11 +41,28 @@ func (s SMTP) Enabled() bool {
 	return s.BaseURL != "" && s.ApiKey != ""
 }
 
+// Feedback — доступ к каталогу багов feedback-service.
+//
+// Пустой BaseURL или ApiKey выключают интеграцию: перечень багов
+// остаётся пустым, а привязка отклоняется. Сервис задач при этом
+// работает как раньше — так же, как и без настроенной почты.
+type Feedback struct {
+	BaseURL string        `yaml:"base_url"`
+	ApiKey  string        `yaml:"api_key"`
+	Timeout time.Duration `yaml:"timeout"`
+}
+
+// Enabled сообщает, настроен ли каталог багов.
+func (f Feedback) Enabled() bool {
+	return f.BaseURL != "" && f.ApiKey != ""
+}
+
 type Config struct {
 	Env      string          `yaml:"env"`
 	HTTP     HTTP            `yaml:"http"`
 	Database database.Config `yaml:"database"`
 	SMTP     SMTP            `yaml:"smtp"`
+	Feedback Feedback        `yaml:"feedback"`
 }
 
 const defaultConfigPath = "./config/config.yaml"
@@ -101,6 +118,9 @@ func defaults() *Config {
 			SSLMode: "disable",
 		},
 		SMTP: SMTP{
+			Timeout: 5 * time.Second,
+		},
+		Feedback: Feedback{
 			Timeout: 5 * time.Second,
 		},
 	}

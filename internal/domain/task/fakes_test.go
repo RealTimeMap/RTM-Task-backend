@@ -277,6 +277,97 @@ func sortByID[T any](objs []T, key func(T) uint) {
 	sort.Slice(objs, func(i, j int) bool { return key(objs[i]) < key(objs[j]) })
 }
 
+// fakeBugs — каталог багов в памяти.
+//
+// Хранит привязку так же, как это делает feedback-service: баг знает
+// свою задачу. Без этого нельзя проверить, что смена бага освобождает
+// прежний, а удаление задачи возвращает баг в перечень свободных.
+type fakeBugs struct {
+	open   []Bug
+	linked map[uint]uint // bugID → taskID
+
+	// synced хранит последний перенесённый статус по задаче.
+	synced map[uint]BugSync
+
+	// err подменяет ответ каталога, когда тест проверяет отказ.
+	err error
+}
+
+func newFakeBugs(open ...Bug) *fakeBugs {
+	return &fakeBugs{
+		open:   open,
+		linked: map[uint]uint{},
+		synced: map[uint]BugSync{},
+	}
+}
+
+func (f *fakeBugs) ListOpen(_ context.Context, _ BugFilter) ([]Bug, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+
+	free := make([]Bug, 0, len(f.open))
+	for _, obj := range f.open {
+		if _, taken := f.linked[obj.ID]; !taken {
+			free = append(free, obj)
+		}
+	}
+	return free, nil
+}
+
+// Get отдаёт баг с подробностями. Логи подставляются заглушкой: тестам
+// важно, что они доезжают до вызывающего, а не что в них написано.
+func (f *fakeBugs) Get(_ context.Context, bugID uint) (Bug, error) {
+	if f.err != nil {
+		return Bug{}, f.err
+	}
+
+	for _, obj := range f.open {
+		if obj.ID == bugID {
+			obj.Logs = []string{"log line"}
+			obj.HasLogs = true
+			return obj, nil
+		}
+	}
+	return Bug{}, ErrBugUnavailable(nil)
+}
+
+func (f *fakeBugs) Link(_ context.Context, bugID, taskID uint) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.linked[bugID] = taskID
+	return nil
+}
+
+func (f *fakeBugs) Unlink(_ context.Context, taskID uint) error {
+	if f.err != nil {
+		return f.err
+	}
+	for bugID, owner := range f.linked {
+		if owner == taskID {
+			delete(f.linked, bugID)
+		}
+	}
+	return nil
+}
+
+func (f *fakeBugs) UnlinkBug(_ context.Context, bugID uint) error {
+	if f.err != nil {
+		return f.err
+	}
+	delete(f.linked, bugID)
+	return nil
+}
+
+func (f *fakeBugs) SyncStatus(_ context.Context, taskID uint, status BugSync) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.synced[taskID] = status
+	return nil
+}
+
 // testService — сервис со всеми хранилищами в памяти.
 type testService struct {
 	*Service
@@ -284,6 +375,7 @@ type testService struct {
 	repo      *fakeRepository
 	comments  *fakeComments
 	checklist *fakeChecklist
+	bugs      *fakeBugs
 }
 
 func newTestService(repo *fakeRepository, staff *fakeStaff) *Service {
@@ -296,11 +388,40 @@ func newTestServiceFull(repo *fakeRepository, staff *fakeStaff) testService {
 	}
 	comments := newFakeComments()
 	checklist := newFakeChecklist()
+	bugs := newFakeBugs()
 
 	return testService{
-		Service:   NewService(repo, comments, checklist, staff, zap.NewNop()),
+		Service:   NewService(repo, comments, checklist, staff, bugs, zap.NewNop()),
 		repo:      repo,
 		comments:  comments,
 		checklist: checklist,
+		bugs:      bugs,
+	}
+}
+
+// newTestServiceWithBugs собирает сервис с заданным каталогом багов.
+//
+// Пустой каталог передаётся как nil-интерфейс, а не как nil-указатель:
+// у типизированного nil интерфейс остаётся ненулевым, и проверка
+// «каталог не настроен» его бы не заметила — ровно та ошибка, которую
+// тест и должен ловить.
+func newTestServiceWithBugs(repo *fakeRepository, staff *fakeStaff, bugs *fakeBugs) testService {
+	if staff == nil {
+		staff = &fakeStaff{}
+	}
+	comments := newFakeComments()
+	checklist := newFakeChecklist()
+
+	var catalog BugCatalog
+	if bugs != nil {
+		catalog = bugs
+	}
+
+	return testService{
+		Service:   NewService(repo, comments, checklist, staff, catalog, zap.NewNop()),
+		repo:      repo,
+		comments:  comments,
+		checklist: checklist,
+		bugs:      bugs,
 	}
 }

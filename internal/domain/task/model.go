@@ -28,6 +28,33 @@ func (t Type) IsValid() bool {
 
 func (t Type) String() string { return string(t) }
 
+// Project — продукт, к которому относится задача.
+//
+// Список закрыт и живёт в домене: проектов ровно два, и заводить ради
+// них справочник в базе значило бы поддерживать таблицу из двух строк
+// вместе с CRUD, миграциями и проверками целостности.
+type Project string
+
+const (
+	TaskProject Project = "rtm-task"
+	AppProject  Project = "rtm-app"
+)
+
+// DefaultProject — куда попадает задача, если проект не указали.
+// Сервис задач ведёт сам себя, поэтому умолчание — он.
+const DefaultProject = TaskProject
+
+func (p Project) IsValid() bool {
+	switch p {
+	case TaskProject, AppProject:
+		return true
+	default:
+		return false
+	}
+}
+
+func (p Project) String() string { return string(p) }
+
 type Status string
 
 const (
@@ -103,6 +130,10 @@ type Task struct {
 	Status   Status   `gorm:"type:varchar(20);not null;default:'new';index"`
 	Priority Priority `gorm:"not null;default:20;index"`
 
+	// Project — продукт, в который направлена задача. По нему доска
+	// делится между командами.
+	Project Project `gorm:"type:varchar(20);not null;default:'rtm-task';index"`
+
 	Title       string `gorm:"type:varchar(300);not null"`
 	Description string `gorm:"type:text"`
 
@@ -118,6 +149,48 @@ type Task struct {
 	ReworkNote string     `gorm:"type:text"`
 	ReworkByID *uint      `gorm:"index"`
 	ReworkAt   *time.Time `gorm:"index"`
+
+	// BugID — баг из feedback-service, над которым ведётся работа.
+	// Заполняется только у задач типа bug: привязывать баг к рефакторингу
+	// нечего. Идентификатор внешний, чужая база — поэтому просто индекс,
+	// без внешнего ключа.
+	BugID *uint `gorm:"index"`
+}
+
+// HasBug сообщает, что к задаче привязан баг.
+func (t *Task) HasBug() bool { return t.BugID != nil }
+
+// AttachBug привязывает баг к задаче.
+//
+// Баг ведут только в задаче типа «баг»: привязка к рефакторингу или
+// обновлению не значила бы ничего, а обратная синхронизация закрывала
+// бы баг по завершении посторонней работы.
+func (t *Task) AttachBug(bugID uint) error {
+	if t.IsClosed() {
+		return ErrTaskClosed(t.ID)
+	}
+	if t.Type != BugType {
+		return ErrBugOnNonBugTask(t.Type.String())
+	}
+	if t.BugID != nil && *t.BugID == bugID {
+		return ErrBugAlreadyAttached(bugID)
+	}
+
+	t.BugID = &bugID
+	return nil
+}
+
+// DetachBug снимает привязку бага.
+func (t *Task) DetachBug() error {
+	if t.IsClosed() {
+		return ErrTaskClosed(t.ID)
+	}
+	if !t.HasBug() {
+		return ErrNoBugAttached(t.ID)
+	}
+
+	t.BugID = nil
+	return nil
 }
 
 func (Task) TableName() string { return "tasks" }
@@ -234,7 +307,12 @@ func (t *Task) Unassign() error {
 }
 
 // ApplyDetails обновляет описательные поля задачи.
-func (t *Task) ApplyDetails(title, description *string, priority *Priority, taskType *Type) error {
+func (t *Task) ApplyDetails(
+	title, description *string,
+	priority *Priority,
+	taskType *Type,
+	project *Project,
+) error {
 	if t.IsClosed() {
 		return ErrTaskClosed(t.ID)
 	}
@@ -261,7 +339,19 @@ func (t *Task) ApplyDetails(title, description *string, priority *Priority, task
 		if !taskType.IsValid() {
 			return ErrInvalidType(taskType.String())
 		}
+		// Баг ведут только в задаче типа «баг». Смена типа на другой
+		// оставила бы привязку висеть: обратная синхронизация закрывала
+		// бы баг по завершении работы, которая к нему уже не относится.
+		if *taskType != BugType && t.HasBug() {
+			return ErrBugAttachedTypeChange(t.Type.String(), taskType.String())
+		}
 		t.Type = *taskType
+	}
+	if project != nil {
+		if !project.IsValid() {
+			return ErrInvalidProject(project.String())
+		}
+		t.Project = *project
 	}
 	return nil
 }

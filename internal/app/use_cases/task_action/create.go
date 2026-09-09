@@ -16,8 +16,13 @@ type CreateTaskCommand struct {
 	Description string
 	Type        string
 	Priority    int
+	Project     string
 	AssigneeID  *uint
 	Checklist   []string
+
+	// BugID — баг, который берут в работу этой задачей.
+	// Допустим только вместе с типом bug.
+	BugID *uint
 }
 
 func (c CreateTaskCommand) Validate() error {
@@ -72,8 +77,10 @@ func (h *CreateTaskHandler) Handle(ctx context.Context, cmd CreateTaskCommand) (
 		Description: cmd.Description,
 		Type:        task.Type(cmd.Type),
 		Priority:    task.Priority(cmd.Priority),
+		Project:     task.Project(cmd.Project),
 		AssigneeID:  cmd.AssigneeID,
 		Checklist:   cmd.Checklist,
+		BugID:       cmd.BugID,
 	})
 	if err != nil {
 		return TaskResult{}, err

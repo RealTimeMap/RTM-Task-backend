@@ -62,6 +62,7 @@ type ListTasksQuery struct {
 	Status         *string
 	Type           *string
 	Priority       *int
+	Project        *string
 	CreatorID      *uint
 	AssigneeID     *uint
 	OnlyUnassigned bool
@@ -114,6 +115,10 @@ func (h *ListTasksHandler) Handle(ctx context.Context, query ListTasksQuery) (Ta
 	if query.Priority != nil {
 		priority := task.Priority(*query.Priority)
 		filter.Priority = &priority
+	}
+	if query.Project != nil {
+		project := task.Project(*query.Project)
+		filter.Project = &project
 	}
 
 	objs, total, err := h.tasks.List(ctx, filter)

@@ -39,6 +39,26 @@ func HandleError(c *gin.Context, err error, logger *zap.Logger) {
 		return
 	}
 
+	// Недоступность зависимости — не вина клиента, и о ней нужно знать
+	// в логах. Но текст наружу не прячем: клиенту важно отличить
+	// «сосед не отвечает» от собственной ошибки, чтобы предложить
+	// повтор вместо общего отказа.
+	if appErr.Kind == apperror.KindUnavailable {
+		logger.Warn("dependency unavailable",
+			zap.String("path", c.FullPath()),
+			zap.String("service", appErr.Field),
+			zap.Error(err),
+		)
+		c.AbortWithStatusJSON(appErr.HTTPStatus(), ErrorResponse{
+			Error: ErrorBody{
+				Code:    appErr.Code,
+				Message: appErr.Message,
+				Field:   appErr.Field,
+			},
+		})
+		return
+	}
+
 	if appErr.Kind == apperror.KindInternal {
 		logger.Error("internal error",
 			zap.String("path", c.FullPath()),

@@ -17,6 +17,13 @@ const (
 	KindUnauthorized Kind = "unauthorized"
 	KindForbidden    Kind = "forbidden"
 	KindInternal     Kind = "internal"
+
+	// KindUnavailable — сбой не у нас, а у сервиса, от которого мы
+	// зависим. Отдельно от KindInternal: «мы сломались» и «сосед не
+	// отвечает» требуют разной реакции — второе лечится повтором,
+	// и клиенту стоит сказать об этом прямо, а не показывать
+	// общую ошибку сервера.
+	KindUnavailable Kind = "unavailable"
 )
 
 // AppError — ошибка приложения, переносимая между слоями без потери смысла.
@@ -51,6 +58,8 @@ func (e *AppError) HTTPStatus() int {
 		return http.StatusUnauthorized
 	case KindForbidden:
 		return http.StatusForbidden
+	case KindUnavailable:
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}
@@ -136,6 +145,21 @@ func WrapInternalError(message string, cause error) error {
 		Kind:    KindInternal,
 		Code:    "internal_error",
 		Message: message,
+		cause:   cause,
+	}
+}
+
+// NewUnavailableError сообщает, что сервис, от которого мы зависим,
+// сейчас недоступен.
+//
+// service попадает в Field: клиенту важно знать, чего именно сейчас нет,
+// чтобы сказать об этом человеку, а не показывать общий отказ.
+func NewUnavailableError(service, message string, cause error) error {
+	return &AppError{
+		Kind:    KindUnavailable,
+		Code:    "service_unavailable",
+		Message: message,
+		Field:   service,
 		cause:   cause,
 	}
 }

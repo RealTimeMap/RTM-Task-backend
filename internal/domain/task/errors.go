@@ -90,6 +90,38 @@ var (
 		)
 	}
 
+	// Ошибки привязки бага из feedback-service.
+	ErrBugOnNonBugTask = func(taskType string) error {
+		return apperror.NewConflictError(
+			"bugId",
+			fmt.Sprintf("a bug can only be attached to a task of type %q, not %q", BugType, taskType),
+		)
+	}
+
+	ErrBugAlreadyAttached = func(bugID uint) error {
+		return apperror.NewConflictError(
+			"bugId",
+			fmt.Sprintf("bug %d is already attached to this task", bugID),
+		)
+	}
+
+	ErrNoBugAttached = func(id uint) error {
+		return apperror.NewConflictError(
+			"bugId",
+			fmt.Sprintf("task %d has no bug attached", id),
+		)
+	}
+
+	ErrBugAttachedTypeChange = func(from, to string) error {
+		return apperror.NewConflictError(
+			"type",
+			fmt.Sprintf(
+				"cannot change type from %q to %q while a bug is attached, detach the bug first",
+				from, to,
+			),
+		)
+	}
+
 	ErrVersionConflict = func(id uint) error {
 		return apperror.NewConflictError(
 			"version",
@@ -113,6 +145,15 @@ var (
 		return apperror.NewValidationError(
 			"type",
 			"must be one of: bug, feature, fix, refactor, update",
+			"value_error.invalid_choice",
+			value,
+		)
+	}
+
+	ErrInvalidProject = func(value string) error {
+		return apperror.NewValidationError(
+			"project",
+			"must be one of: rtm-task, rtm-app",
 			"value_error.invalid_choice",
 			value,
 		)
@@ -203,6 +244,20 @@ var (
 
 // Ошибки прав доступа.
 var (
+	// ErrBugUnavailable сообщает, что каталог багов недоступен:
+	// feedback-service не отвечает или интеграция не настроена.
+	//
+	// Не внутренняя ошибка, а недоступность зависимости: задачи при этом
+	// работают, отказ временный и лечится повтором. Клиент по 503
+	// показывает «сервис багов временно недоступен» вместо общего сбоя.
+	ErrBugUnavailable = func(cause error) error {
+		return apperror.NewUnavailableError(
+			"feedback",
+			"bug catalog is unavailable, try again later",
+			cause,
+		)
+	}
+
 	ErrCreateForbidden = func(role string) error {
 		return apperror.NewForbiddenError(
 			fmt.Sprintf("role %q is not allowed to create tasks", role),

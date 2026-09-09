@@ -7,6 +7,7 @@ type Filter struct {
 	Status     *Status
 	Type       *Type
 	Priority   *Priority
+	Project    *Project
 	CreatorID  *uint
 	AssigneeID *uint
 

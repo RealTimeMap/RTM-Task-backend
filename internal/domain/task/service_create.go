@@ -34,6 +34,20 @@ func (s *Service) Create(ctx context.Context, actor role.Actor, params CreateTas
 		return nil, ErrInvalidPriority(priority.Int())
 	}
 
+	project := params.Project
+	if project == "" {
+		project = DefaultProject
+	}
+	if !project.IsValid() {
+		return nil, ErrInvalidProject(project.String())
+	}
+
+	// Баг привязывают только к задаче типа «баг» — проверяем до записи,
+	// чтобы не заводить задачу, которую всё равно придётся исправлять.
+	if params.BugID != nil && params.Type != BugType {
+		return nil, ErrBugOnNonBugTask(params.Type.String())
+	}
+
 	if err := s.ensureDailyLimit(ctx, actor.StaffID); err != nil {
 		return nil, err
 	}
@@ -43,9 +57,11 @@ func (s *Service) Create(ctx context.Context, actor role.Actor, params CreateTas
 		Description: params.Description,
 		Type:        params.Type,
 		Priority:    priority,
+		Project:     project,
 		Status:      NewStatus,
 		CreatorID:   actor.StaffID,
 		Version:     1,
+		BugID:       params.BugID,
 	}
 
 	// Исполнитель на старте необязателен, но если указан — проверяем,
@@ -64,6 +80,19 @@ func (s *Service) Create(ctx context.Context, actor role.Actor, params CreateTas
 	created, err := s.repo.Create(ctx, obj)
 	if err != nil {
 		return nil, err
+	}
+
+	// Баг отмечается занятым после создания задачи: до этого момента
+	// её идентификатора ещё нет, а привязка без него бессмысленна.
+	//
+	// Отказ каталога откатывает привязку в самой задаче, но не саму
+	// задачу: она уже заведена и полезна, а баг к ней можно привязать
+	// повторно. Оставить ссылку на баг, который каталог считает
+	// свободным, нельзя — его выдали бы второй задаче.
+	if created.HasBug() {
+		if err := s.linkBug(ctx, created); err != nil {
+			return nil, err
+		}
 	}
 
 	// Чек-лист заводится после задачи: пунктам нужен её идентификатор.
@@ -102,4 +131,35 @@ func (s *Service) ensureCanAssign(ctx context.Context, actor role.Actor, assigne
 		return ErrAssignForbidden()
 	}
 	return s.staff.EnsureAssignable(ctx, assigneeID)
+}
+
+// linkBug отмечает баг занятым этой задачей.
+//
+// Если каталог отказал (баг уже забрали, сервис недоступен), ссылка
+// снимается с задачи: расхождение, в котором задача считает баг своим,
+// а каталог отдаёт его другим, хуже, чем задача вовсе без бага.
+func (s *Service) linkBug(ctx context.Context, obj *Task) error {
+	if s.bugs == nil {
+		return ErrBugUnavailable(nil)
+	}
+
+	err := s.bugs.Link(ctx, *obj.BugID, obj.ID)
+	if err == nil {
+		return nil
+	}
+
+	s.logger.Warn("link bug failed, task created without it",
+		zap.Uint("task_id", obj.ID),
+		zap.Uint("bug_id", *obj.BugID),
+		zap.Error(err),
+	)
+
+	obj.BugID = nil
+	if _, saveErr := s.save(ctx, obj); saveErr != nil {
+		s.logger.Error("rollback bug link failed",
+			zap.Uint("task_id", obj.ID),
+			zap.Error(saveErr),
+		)
+	}
+	return err
 }

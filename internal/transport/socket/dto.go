@@ -13,6 +13,7 @@ type listTasksPayload struct {
 	Status     *string `json:"status"`
 	Type       *string `json:"type"`
 	Priority   *int    `json:"priority"`
+	Project    *string `json:"project"`
 	CreatorID  *uint   `json:"creatorId"`
 	AssigneeID *uint   `json:"assigneeId"`
 	Unassigned bool    `json:"unassigned"`
