@@ -12,13 +12,19 @@ import (
 
 // RegisterRoutes собирает дерево маршрутов сервиса.
 func RegisterRoutes(g *gin.Engine, container *app.Container) {
-	g.GET("/health", healthHandler(container))
+	// Health не кэшируется: по нему судят о состоянии сервиса сейчас, а
+	// не о том, каким оно было, когда ответ положили в кэш.
+	g.GET("/health", middleware.NoCache(), healthHandler(container))
 
 	// Публичных маршрутов у сервиса нет: он живёт за шлюзом, который
 	// валидирует токен в auth-service и проставляет заголовки пользователя.
 	// Сотрудник заводится сам при первом обращении, поэтому регистрация
 	// отдельной ручкой не нужна.
 	api := g.Group("/api/v1")
+	// Кэш запрещаем раньше аутентификации: заголовки должны попасть и в
+	// ответы 401/403, иначе браузер закэширует отказ и будет показывать
+	// его после входа.
+	api.Use(middleware.NoCache())
 	api.Use(middleware.AuthRequired(container.StaffService, container.Logger))
 
 	handlers.InitStaffHandler(api, container.StaffUseCases, container.Logger)
