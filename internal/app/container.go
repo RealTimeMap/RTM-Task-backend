@@ -4,9 +4,11 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"RTM-Task/internal/app/use_cases/idea_action"
 	"RTM-Task/internal/app/use_cases/staff_action"
 	"RTM-Task/internal/app/use_cases/task_action"
 	"RTM-Task/internal/config"
+	"RTM-Task/internal/domain/idea"
 	"RTM-Task/internal/domain/role"
 	"RTM-Task/internal/domain/task"
 	"RTM-Task/internal/infrastructure/feedback"
@@ -27,6 +29,7 @@ type Container struct {
 
 	TaskUseCases  *task_action.Application
 	StaffUseCases *staff_action.Application
+	IdeaUseCases  *idea_action.Application
 
 	Socket *socket.Server
 }
@@ -37,6 +40,8 @@ func MustContainer(cfg *config.Config, db *gorm.DB, log *zap.Logger) *Container 
 	taskRepo := postgres.NewTaskRepository(db, log)
 	commentRepo := postgres.NewCommentRepository(db, log)
 	checklistRepo := postgres.NewChecklistRepository(db, log)
+	ideaRepo := postgres.NewIdeaRepository(db, log)
+	ideaCommentRepo := postgres.NewIdeaCommentRepository(db, log)
 
 	// Каталог багов feedback-service. Порт остаётся nil, если интеграция
 	// не настроена: домен это допускает — перечень багов пуст, а привязка
@@ -101,6 +106,11 @@ func MustContainer(cfg *config.Config, db *gorm.DB, log *zap.Logger) *Container 
 		Checklist: task_action.NewChecklistHandler(taskService, publisher, log),
 	}
 
+	// Идеи не участвуют в realtime и уведомлениях: копилка замыслов
+	// не требует, чтобы о ней узнавали в ту же секунду.
+	ideaService := idea.NewService(ideaRepo, ideaCommentRepo, log)
+	ideaUseCases := idea_action.NewApplication(ideaService, log)
+
 	staffUseCases := &staff_action.Application{
 		GetStaff:   staff_action.NewGetStaffHandler(staffService, log),
 		ListStaff:  staff_action.NewListStaffHandler(staffService, log),
@@ -118,6 +128,7 @@ func MustContainer(cfg *config.Config, db *gorm.DB, log *zap.Logger) *Container 
 		StaffService:  staffService,
 		TaskUseCases:  taskUseCases,
 		StaffUseCases: staffUseCases,
+		IdeaUseCases:  ideaUseCases,
 		Socket:        socketServer,
 	}
 }

@@ -29,6 +29,7 @@ func RegisterRoutes(g *gin.Engine, container *app.Container) {
 
 	handlers.InitStaffHandler(api, container.StaffUseCases, container.Logger)
 	handlers.InitTaskHandler(api, container.TaskUseCases, container.Logger)
+	handlers.InitIdeaHandler(api, container.IdeaUseCases, container.Logger)
 
 	// Socket.IO: получение задач в реальном времени и push об изменениях.
 	// Аутентификация выполняется при рукопожатии внутри namespace,

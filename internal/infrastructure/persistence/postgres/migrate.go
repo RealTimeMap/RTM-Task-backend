@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"RTM-Task/internal/domain/idea"
 	"RTM-Task/internal/domain/role"
 	"RTM-Task/internal/domain/task"
 )
@@ -16,6 +17,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&task.Task{},
 		&task.Comment{},
 		&task.ChecklistItem{},
+		&idea.Idea{},
+		&idea.Comment{},
 	); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
