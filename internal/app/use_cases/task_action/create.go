@@ -97,6 +97,12 @@ func (h *CreateTaskHandler) Handle(ctx context.Context, cmd CreateTaskCommand) (
 
 	publish(ctx, h.publisher, TaskEvent{Name: EventTaskCreated, Task: result})
 
+	// Задачу могли завести из бага — тогда он больше не свободен, и
+	// перечень в разборе стал другим.
+	if cmd.BugID != nil {
+		publishBugsChanged(ctx, h.publisher)
+	}
+
 	// Задачу могли сразу завести на исполнителя — для него это то же
 	// событие «на вас назначена задача», что и при отдельном назначении.
 	if obj.AssigneeID != nil {

@@ -15,6 +15,10 @@ type recordingPublisher struct {
 	events     []TaskEvent
 	comments   []CommentEvent
 	checklists []ChecklistEvent
+
+	// bugsChanged считает приглашения перечитать перечень багов:
+	// у события нет нагрузки, и запоминать в нём нечего, кроме факта.
+	bugsChanged int
 }
 
 func (p *recordingPublisher) PublishTask(_ context.Context, event TaskEvent) {
@@ -27,6 +31,10 @@ func (p *recordingPublisher) PublishComment(_ context.Context, event CommentEven
 
 func (p *recordingPublisher) PublishChecklist(_ context.Context, event ChecklistEvent) {
 	p.checklists = append(p.checklists, event)
+}
+
+func (p *recordingPublisher) PublishBugsChanged(_ context.Context) {
+	p.bugsChanged++
 }
 
 // recordingNotifier запоминает отправленные уведомления.
@@ -338,5 +346,52 @@ func TestNotifyFailureDoesNotBreakAssignment(t *testing.T) {
 	}
 	if len(notices.notices) != 0 {
 		t.Fatalf("уведомление ушло, хотя сотрудник не найден: %d", len(notices.notices))
+	}
+}
+
+// Перечень свободных багов меняется не только привязкой: задача,
+// заведённая из бага, забирает его из разбора, а удалённая — возвращает.
+// Об этом узнаёт тот, кто смотрит на перечень, и событие здесь —
+// единственный способ ему сообщить.
+
+func TestCreateFromBugPublishesBugsChanged(t *testing.T) {
+	created := &task.Task{Title: "From bug", Status: task.NewStatus, Type: task.BugType}
+	created.ID = 11
+
+	publisher := &recordingPublisher{}
+	handler := NewCreateTaskHandler(&stubTasks{created: created}, staffStub, nil, publisher, notifier, zap.NewNop())
+
+	bugID := uint(77)
+	_, err := handler.Handle(context.Background(), CreateTaskCommand{
+		Title: "From bug",
+		Type:  "bug",
+		BugID: &bugID,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if publisher.bugsChanged != 1 {
+		t.Fatalf("bugs changed published %d times, want 1", publisher.bugsChanged)
+	}
+}
+
+func TestCreateWithoutBugKeepsBugsSilent(t *testing.T) {
+	created := &task.Task{Title: "Plain task", Status: task.NewStatus, Type: task.FeatureType}
+	created.ID = 12
+
+	publisher := &recordingPublisher{}
+	handler := NewCreateTaskHandler(&stubTasks{created: created}, staffStub, nil, publisher, notifier, zap.NewNop())
+
+	_, err := handler.Handle(context.Background(), CreateTaskCommand{
+		Title: "Plain task",
+		Type:  "feature",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if publisher.bugsChanged != 0 {
+		t.Fatalf("bugs changed published %d times, want 0", publisher.bugsChanged)
 	}
 }

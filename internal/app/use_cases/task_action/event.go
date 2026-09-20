@@ -31,6 +31,15 @@ const (
 	EventChecklistAdded   = "taskChecklistAdded"
 	EventChecklistUpdated = "taskChecklistUpdated"
 	EventChecklistDeleted = "taskChecklistDeleted"
+
+	// EventBugsChanged говорит, что перечень свободных багов стал
+	// другим: баг взяли в работу или вернули в разбор.
+	//
+	// Без полезной нагрузки — это приглашение перечитать перечень, а
+	// не сам баг. Каталог живёт в feedback-service, и слать его состав
+	// отсюда значило бы пересказывать чужие данные, которые к моменту
+	// доставки успеют измениться.
+	EventBugsChanged = "bugsChanged"
 )
 
 // CommentEvent — уведомление об изменении обсуждения задачи.
@@ -55,6 +64,10 @@ type EventPublisher interface {
 	// разная, и сводить её к map[string]any значило бы потерять типы.
 	PublishComment(ctx context.Context, event CommentEvent)
 	PublishChecklist(ctx context.Context, event ChecklistEvent)
+
+	// PublishBugsChanged сообщает, что перечень свободных багов
+	// изменился. Без нагрузки: получатель перечитает его сам.
+	PublishBugsChanged(ctx context.Context)
 }
 
 // publish отправляет событие, если publisher подключён.
@@ -80,4 +93,12 @@ func publishChecklist(ctx context.Context, publisher EventPublisher, event Check
 		return
 	}
 	publisher.PublishChecklist(ctx, event)
+}
+
+// publishBugsChanged зовёт получателей перечитать перечень багов.
+func publishBugsChanged(ctx context.Context, publisher EventPublisher) {
+	if publisher == nil {
+		return
+	}
+	publisher.PublishBugsChanged(ctx)
 }

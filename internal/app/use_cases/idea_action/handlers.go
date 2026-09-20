@@ -72,7 +72,10 @@ func (a *Application) Create(ctx context.Context, cmd CreateCommand) (IdeaResult
 	}
 
 	a.logger.Info("idea created", zap.Uint("id", obj.ID), zap.Uint("author_id", obj.AuthorID))
-	return toIdeaResult(obj), nil
+
+	result := toIdeaResult(obj)
+	publish(ctx, a.publisher, IdeaEvent{Name: EventIdeaCreated, Idea: result})
+	return result, nil
 }
 
 // Get отдаёт идею вместе с числом реплик.
@@ -145,7 +148,10 @@ func (a *Application) Update(ctx context.Context, cmd UpdateCommand) (IdeaResult
 	if err != nil {
 		return IdeaResult{}, err
 	}
-	return toIdeaResult(obj), nil
+
+	result := toIdeaResult(obj)
+	publish(ctx, a.publisher, IdeaEvent{Name: EventIdeaUpdated, Idea: result})
+	return result, nil
 }
 
 // SetDone отмечает идею выполненной или возвращает её в работу.
@@ -156,7 +162,13 @@ func (a *Application) SetDone(ctx context.Context, cmd SetDoneCommand) (IdeaResu
 	}
 
 	a.logger.Info("idea done changed", zap.Uint("id", cmd.ID), zap.Bool("done", cmd.Done))
-	return toIdeaResult(obj), nil
+
+	// Отметка выполнения — та же правка идеи: получателю приходит её
+	// новое состояние целиком, и отдельное событие про один флаг
+	// заставило бы клиент собирать идею из кусков.
+	result := toIdeaResult(obj)
+	publish(ctx, a.publisher, IdeaEvent{Name: EventIdeaUpdated, Idea: result})
+	return result, nil
 }
 
 // Delete убирает идею вместе с обсуждением.
@@ -166,6 +178,10 @@ func (a *Application) Delete(ctx context.Context, cmd DeleteCommand) error {
 	}
 
 	a.logger.Info("idea deleted", zap.Uint("id", cmd.ID))
+
+	// Идеи уже нет — в событии несём только идентификатор: по нему
+	// получатель уберёт её у себя.
+	publish(ctx, a.publisher, IdeaEvent{Name: EventIdeaDeleted, Idea: IdeaResult{ID: cmd.ID}})
 	return nil
 }
 
@@ -186,7 +202,10 @@ func (a *Application) AddComment(ctx context.Context, cmd CommentCommand) (Comme
 	if err != nil {
 		return CommentResult{}, err
 	}
-	return toCommentResult(obj), nil
+
+	result := toCommentResult(obj)
+	publishComment(ctx, a.publisher, IdeaCommentEvent{Name: EventIdeaCommentAdded, Comment: result})
+	return result, nil
 }
 
 // UpdateComment правит текст реплики.
@@ -195,10 +214,23 @@ func (a *Application) UpdateComment(ctx context.Context, cmd CommentCommand) (Co
 	if err != nil {
 		return CommentResult{}, err
 	}
-	return toCommentResult(obj), nil
+
+	result := toCommentResult(obj)
+	publishComment(ctx, a.publisher, IdeaCommentEvent{Name: EventIdeaCommentUpdated, Comment: result})
+	return result, nil
 }
 
 // DeleteComment убирает реплику.
 func (a *Application) DeleteComment(ctx context.Context, cmd CommentCommand) error {
-	return a.service.DeleteComment(ctx, cmd.Actor, cmd.IdeaID, cmd.CommentID)
+	if err := a.service.DeleteComment(ctx, cmd.Actor, cmd.IdeaID, cmd.CommentID); err != nil {
+		return err
+	}
+
+	// Реплики уже нет — несём идентификаторы, по которым получатель
+	// найдёт её у себя: саму реплику восстанавливать не из чего.
+	publishComment(ctx, a.publisher, IdeaCommentEvent{
+		Name:    EventIdeaCommentDeleted,
+		Comment: CommentResult{ID: cmd.CommentID, IdeaID: cmd.IdeaID},
+	})
+	return nil
 }

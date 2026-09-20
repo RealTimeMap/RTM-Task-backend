@@ -3,7 +3,9 @@ package socket
 import (
 	"encoding/json"
 
+	"RTM-Task/internal/app/use_cases/idea_action"
 	"RTM-Task/internal/app/use_cases/task_action"
+	ideadto "RTM-Task/internal/transport/http/dto/idea"
 	dto "RTM-Task/internal/transport/http/dto/task"
 )
 
@@ -85,4 +87,15 @@ func commentPayload(result task_action.CommentResult) dto.CommentResponse {
 
 func checklistPayload(result task_action.ChecklistItemResult) dto.ChecklistItemResponse {
 	return dto.NewChecklistItemResponse(result)
+}
+
+// ideaPayload и ideaCommentPayload переводят результаты сценариев идей
+// в те же тела, что отдаёт REST: клиент разбирает идею одним кодом,
+// пришла она ответом на запрос или событием.
+func ideaPayload(result idea_action.IdeaResult) ideadto.Response {
+	return ideadto.NewResponse(result)
+}
+
+func ideaCommentPayload(result idea_action.CommentResult) ideadto.CommentResponse {
+	return ideadto.NewCommentResponse(result)
 }

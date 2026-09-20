@@ -109,7 +109,7 @@ func MustContainer(cfg *config.Config, db *gorm.DB, log *zap.Logger) *Container 
 	// Идеи не участвуют в realtime и уведомлениях: копилка замыслов
 	// не требует, чтобы о ней узнавали в ту же секунду.
 	ideaService := idea.NewService(ideaRepo, ideaCommentRepo, log)
-	ideaUseCases := idea_action.NewApplication(ideaService, log)
+	ideaUseCases := idea_action.NewApplication(ideaService, publisher, log)
 
 	staffUseCases := &staff_action.Application{
 		GetStaff:   staff_action.NewGetStaffHandler(staffService, log),

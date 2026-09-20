@@ -44,6 +44,11 @@ func (h *DeleteTaskHandler) Handle(ctx context.Context, cmd DeleteTaskCommand) e
 
 	if snapshot.ID != 0 {
 		publish(ctx, h.publisher, TaskEvent{Name: EventTaskDeleted, Task: snapshot})
+
+		// Вместе с задачей отпущен и её баг: он вернулся в разбор.
+		if snapshot.BugID != nil {
+			publishBugsChanged(ctx, h.publisher)
+		}
 	}
 
 	return nil

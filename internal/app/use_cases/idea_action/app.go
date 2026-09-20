@@ -1,9 +1,13 @@
 // Package idea_action — сценарии работы с копилкой идей.
 //
 // Собраны в один обработчик, а не разложены по файлу на сценарий, как
-// у задач: у идеи нет ни жизненного цикла, ни уведомлений, ни событий
-// в сокет — все операции умещаются в несколько строк каждая, и
-// дробить их значило бы плодить папку однострочных типов.
+// у задач: у идеи нет ни жизненного цикла, ни уведомлений — все
+// операции умещаются в несколько строк каждая, и дробить их значило
+// бы плодить папку однострочных типов.
+//
+// События в сокет идеи всё же рассылают: их состав виден бейджем в
+// меню с любого экрана, и узнавать об изменении только при заходе в
+// раздел значило бы держать на виду неверное число.
 package idea_action
 
 import (
@@ -34,12 +38,21 @@ type IdeaService interface {
 
 // Application — точка входа транспортного слоя в сценарии идей.
 type Application struct {
-	service IdeaService
-	logger  *zap.Logger
+	service   IdeaService
+	publisher EventPublisher
+	logger    *zap.Logger
 }
 
-func NewApplication(service IdeaService, logger *zap.Logger) *Application {
-	return &Application{service: service, logger: logger.Named("idea_use_cases")}
+// NewApplication собирает сценарии идей.
+//
+// publisher может быть nil: без сокета сценарии работают как прежде,
+// просто не рассылая событий — так их можно поднять и в тесте.
+func NewApplication(service IdeaService, publisher EventPublisher, logger *zap.Logger) *Application {
+	return &Application{
+		service:   service,
+		publisher: publisher,
+		logger:    logger.Named("idea_use_cases"),
+	}
 }
 
 // IdeaResult — идея в виде, пригодном для транспорта.

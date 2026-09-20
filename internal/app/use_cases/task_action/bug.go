@@ -168,6 +168,8 @@ func (h *BugHandler) Attach(ctx context.Context, cmd AttachBugCommand) (TaskResu
 
 	result := h.withSummary(ctx, obj)
 	publish(ctx, h.publisher, TaskEvent{Name: EventTaskUpdated, Task: result})
+	// Баг ушёл из свободных — перечень у всех, кто его смотрит, устарел.
+	publishBugsChanged(ctx, h.publisher)
 
 	return result, nil
 }
@@ -180,6 +182,8 @@ func (h *BugHandler) Detach(ctx context.Context, cmd DetachBugCommand) (TaskResu
 
 	result := h.withSummary(ctx, obj)
 	publish(ctx, h.publisher, TaskEvent{Name: EventTaskUpdated, Task: result})
+	// Освобождённый баг вернулся в разбор — перечень снова другой.
+	publishBugsChanged(ctx, h.publisher)
 
 	return result, nil
 }
