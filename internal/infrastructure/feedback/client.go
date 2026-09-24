@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"go.uber.org/zap"
 
 	"RTM-Task/internal/domain/task"
+	"RTM-Task/internal/utils/apperror"
 )
 
 // Контракт межсервисных маршрутов feedback-service.
@@ -103,6 +105,11 @@ type bugResponse struct {
 	OS         string   `json:"os"`
 	Resolution string   `json:"resolution"`
 	Battery    *float64 `json:"battery"`
+
+	// Итог проверки разработчиком. Пусто, пока баг не проверен.
+	ReviewedAt    *time.Time `json:"reviewedAt"`
+	RejectReason  string     `json:"rejectReason"`
+	ReviewComment string     `json:"reviewComment"`
 }
 
 // bugDetailResponse — баг целиком: та же карточка плюс логи.
@@ -134,6 +141,10 @@ func (b bugResponse) toDomain() task.Bug {
 		OS:          b.OS,
 		Resolution:  b.Resolution,
 		Battery:     b.Battery,
+
+		ReviewedAt:    b.ReviewedAt,
+		RejectReason:  task.BugRejectReason(b.RejectReason),
+		ReviewComment: b.ReviewComment,
 	}
 }
 
@@ -145,7 +156,8 @@ func (b bugDetailResponse) toDomain() task.Bug {
 	return obj
 }
 
-// ListOpen возвращает баги, которые можно взять в задачу.
+// ListOpen возвращает свободные баги: подтверждённые или, с явным
+// статусом, очередь проверки и отклонённые.
 func (c *Client) ListOpen(ctx context.Context, filter task.BugFilter) ([]task.Bug, error) {
 	limit := filter.Limit
 	if limit <= 0 {
@@ -160,10 +172,15 @@ func (c *Client) ListOpen(ctx context.Context, filter task.BugFilter) ([]task.Bu
 	if filter.Tag != "" {
 		query.Set("tag", filter.Tag)
 	}
+	// Явный статус заменяет на той стороне набор открытых: без него
+	// приходят подтверждённые баги, с ним — ровно запрошенное состояние.
+	if filter.Status != "" {
+		query.Set("status", filter.Status)
+	}
 
 	var body bugListResponse
 	if err := c.do(ctx, http.MethodGet, bugsPath+"?"+query.Encode(), nil, &body); err != nil {
-		return nil, task.ErrBugUnavailable(err)
+		return nil, translate(err, 0)
 	}
 
 	bugs := make([]task.Bug, 0, len(body.Items))
@@ -179,7 +196,7 @@ func (c *Client) Get(ctx context.Context, bugID uint) (task.Bug, error) {
 
 	var body bugDetailResponse
 	if err := c.do(ctx, http.MethodGet, path, nil, &body); err != nil {
-		return task.Bug{}, task.ErrBugUnavailable(err)
+		return task.Bug{}, translate(err, bugID)
 	}
 	return body.toDomain(), nil
 }
@@ -190,7 +207,7 @@ func (c *Client) Link(ctx context.Context, bugID, taskID uint) error {
 	payload := map[string]any{"taskId": taskID}
 
 	if err := c.do(ctx, http.MethodPut, path, payload, nil); err != nil {
-		return task.ErrBugUnavailable(err)
+		return translate(err, bugID)
 	}
 	return nil
 }
@@ -200,7 +217,7 @@ func (c *Client) Unlink(ctx context.Context, taskID uint) error {
 	path := fmt.Sprintf("%s/task/%d", bugsPath, taskID)
 
 	if err := c.do(ctx, http.MethodDelete, path, nil, nil); err != nil {
-		return task.ErrBugUnavailable(err)
+		return translate(err, 0)
 	}
 	return nil
 }
@@ -210,7 +227,7 @@ func (c *Client) UnlinkBug(ctx context.Context, bugID uint) error {
 	path := fmt.Sprintf("%s/%d/task", bugsPath, bugID)
 
 	if err := c.do(ctx, http.MethodDelete, path, nil, nil); err != nil {
-		return task.ErrBugUnavailable(err)
+		return translate(err, bugID)
 	}
 	return nil
 }
@@ -221,9 +238,117 @@ func (c *Client) SyncStatus(ctx context.Context, taskID uint, status task.BugSyn
 	payload := map[string]any{"status": string(status)}
 
 	if err := c.do(ctx, http.MethodPatch, path, payload, nil); err != nil {
-		return task.ErrBugUnavailable(err)
+		return translate(err, 0)
 	}
 	return nil
+}
+
+// Confirm фиксирует, что разработчик воспроизвёл баг.
+func (c *Client) Confirm(ctx context.Context, review task.BugReview) (task.Bug, error) {
+	path := fmt.Sprintf("%s/%d/confirm", bugsPath, review.BugID)
+	payload := map[string]any{"comment": review.Comment}
+
+	var body bugResponse
+	if err := c.do(ctx, http.MethodPost, path, payload, &body); err != nil {
+		return task.Bug{}, translate(err, review.BugID)
+	}
+	return body.toDomain(), nil
+}
+
+// Reject фиксирует, что проверка баг не подтвердила.
+func (c *Client) Reject(ctx context.Context, review task.BugReview) (task.Bug, error) {
+	path := fmt.Sprintf("%s/%d/reject", bugsPath, review.BugID)
+	payload := map[string]any{
+		"reason":  string(review.Reason),
+		"comment": review.Comment,
+	}
+
+	var body bugResponse
+	if err := c.do(ctx, http.MethodPost, path, payload, &body); err != nil {
+		return task.Bug{}, translate(err, review.BugID)
+	}
+	return body.toDomain(), nil
+}
+
+// Reopen возвращает баг на повторную проверку.
+func (c *Client) Reopen(ctx context.Context, bugID uint) (task.Bug, error) {
+	path := fmt.Sprintf("%s/%d/reopen", bugsPath, bugID)
+
+	var body bugResponse
+	if err := c.do(ctx, http.MethodPost, path, nil, &body); err != nil {
+		return task.Bug{}, translate(err, bugID)
+	}
+	return body.toDomain(), nil
+}
+
+// statusError — ответ feedback-service с кодом вне 2xx.
+//
+// Отдельный тип, а не строка: по коду решается, чья это ошибка. Отказ
+// по состоянию бага (404, 409, 422) — ответ на запрос, и пользователь
+// должен увидеть его как есть. Всё прочее — сбой соседа.
+type statusError struct {
+	Status int
+	// Message — первое пояснение из тела ответа, если оно разобралось.
+	Message string
+	Body    string
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("feedback-service returned %d: %s", e.Status, e.Body)
+}
+
+// errorBody — формат ошибки feedback-service: либо перечень пояснений
+// по полям, либо одна строка.
+type errorBody struct {
+	Detail []struct {
+		Msg string `json:"msg"`
+	} `json:"detail"`
+	Error string `json:"error"`
+}
+
+func newStatusError(status int, raw []byte) *statusError {
+	err := &statusError{Status: status, Body: strings.TrimSpace(string(raw))}
+
+	var body errorBody
+	if json.Unmarshal(raw, &body) == nil {
+		if len(body.Detail) > 0 {
+			err.Message = body.Detail[0].Msg
+		} else {
+			err.Message = body.Error
+		}
+	}
+	if err.Message == "" {
+		err.Message = err.Body
+	}
+	return err
+}
+
+// translate приводит отказ feedback-service к доменной ошибке.
+//
+// Раньше любой отказ считался недоступностью, и это было честно, пока
+// каталог отказывал только по сбою. Теперь он отказывает и по правилам —
+// «баг ещё не подтверждён», «уже отклонён», — и выдавать такой ответ за
+// «сервис временно недоступен» значило бы звать человека повторять то,
+// что не пройдёт никогда.
+//
+// 401 и 403 остаются недоступностью: это расхождение ключей между
+// сервисами, а не ошибка пользователя.
+func translate(err error, bugID uint) error {
+	var status *statusError
+	if !errors.As(err, &status) {
+		return task.ErrBugUnavailable(err)
+	}
+
+	switch status.Status {
+	case http.StatusNotFound:
+		return task.ErrBugNotFound(bugID)
+	case http.StatusConflict:
+		return task.ErrBugConflict(status.Message)
+	case http.StatusBadRequest, http.StatusUnprocessableEntity:
+		return apperror.NewValidationError("bug", status.Message, "value_error", nil)
+	default:
+		return task.ErrBugUnavailable(err)
+	}
 }
 
 // do выполняет запрос к feedback-service и разбирает ответ в out.
@@ -257,13 +382,10 @@ func (c *Client) do(ctx context.Context, method, path string, payload, out any) 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// Тело ошибки читаем ограниченно: оно идёт в лог, а не
-		// пользователю, и качать оттуда мегабайты незачем.
+		// Тело ошибки читаем ограниченно: пользователю из него уходит
+		// одна строка пояснения, и качать оттуда мегабайты незачем.
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf(
-			"feedback-service returned %d: %s",
-			resp.StatusCode, strings.TrimSpace(string(detail)),
-		)
+		return newStatusError(resp.StatusCode, detail)
 	}
 
 	if out == nil || resp.StatusCode == http.StatusNoContent {

@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"RTM-Task/internal/app/use_cases/task_action"
+	"RTM-Task/internal/domain/role"
 	dto "RTM-Task/internal/transport/http/dto/task"
 	"RTM-Task/internal/transport/http/middleware"
 	"RTM-Task/internal/utils/apperror"
@@ -28,6 +29,16 @@ func InitTaskHandler(rg *gin.RouterGroup, useCases *task_action.Application, log
 	// вне /tasks/:id: он нужен ещё до того, как задача создана — в форме,
 	// где выбирают, над каким багом заводить работу.
 	rg.GET("/bugs", h.ListBugs)
+
+	// Проверка отчёта разработчиком. В задачу берут только
+	// подтверждённые баги, поэтому решение принимается до неё — и
+	// маршруты живут у перечня, а не у задачи.
+	bugs := rg.Group("/bugs/:bugId")
+	{
+		bugs.POST("/confirm", h.ConfirmBug)
+		bugs.POST("/reject", h.RejectBug)
+		bugs.POST("/reopen", h.ReopenBug)
+	}
 
 	tasks := rg.Group("/tasks")
 	{
@@ -311,8 +322,10 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// ListBugs отдаёт перечень багов, которые можно взять в работу.
+// ListBugs отдаёт перечень свободных багов.
 //
+// Без status — подтверждённые баги, которые можно взять в работу;
+// status=new — очередь проверки, status=rejected — отклонённые.
 // Завершённые и уже занятые баги сюда не попадают: их отбирает
 // feedback-service, а сервис задач только передаёт запрос дальше.
 func (h *TaskHandler) ListBugs(c *gin.Context) {
@@ -323,8 +336,9 @@ func (h *TaskHandler) ListBugs(c *gin.Context) {
 	}
 
 	results, err := h.useCases.Bugs.List(c.Request.Context(), task_action.ListBugsQuery{
-		Tag:   query.Tag,
-		Limit: query.Limit,
+		Tag:    query.Tag,
+		Status: query.Status,
+		Limit:  query.Limit,
 	})
 	if err != nil {
 		middleware.HandleError(c, err, h.logger)
@@ -332,6 +346,98 @@ func (h *TaskHandler) ListBugs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, dto.NewBugListResponse(results))
+}
+
+// ConfirmBug фиксирует, что разработчик воспроизвёл баг.
+func (h *TaskHandler) ConfirmBug(c *gin.Context) {
+	actor, id, ok := h.bugReviewTarget(c)
+	if !ok {
+		return
+	}
+
+	// Тело необязательно: подтвердить можно и без пояснения.
+	var req dto.ConfirmBugRequest
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			middleware.AbortWithBindingError(c, err, h.logger)
+			return
+		}
+	}
+
+	result, err := h.useCases.Bugs.Confirm(c.Request.Context(), task_action.ReviewBugCommand{
+		Actor:   actor,
+		BugID:   id,
+		Comment: req.Comment,
+	})
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.NewBugResponse(result))
+}
+
+// RejectBug фиксирует, что проверка баг не подтвердила.
+func (h *TaskHandler) RejectBug(c *gin.Context) {
+	actor, id, ok := h.bugReviewTarget(c)
+	if !ok {
+		return
+	}
+
+	var req dto.RejectBugRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		middleware.AbortWithBindingError(c, err, h.logger)
+		return
+	}
+
+	result, err := h.useCases.Bugs.Reject(c.Request.Context(), task_action.ReviewBugCommand{
+		Actor:   actor,
+		BugID:   id,
+		Reason:  req.Reason,
+		Comment: req.Comment,
+	})
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.NewBugResponse(result))
+}
+
+// ReopenBug возвращает баг на повторную проверку.
+func (h *TaskHandler) ReopenBug(c *gin.Context) {
+	actor, id, ok := h.bugReviewTarget(c)
+	if !ok {
+		return
+	}
+
+	result, err := h.useCases.Bugs.Reopen(c.Request.Context(), task_action.ReopenBugCommand{
+		Actor: actor,
+		BugID: id,
+	})
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.NewBugResponse(result))
+}
+
+// bugReviewTarget читает участника и номер бага для решения по отчёту.
+// Ответ с ошибкой уже отправлен, если ok ложно.
+func (h *TaskHandler) bugReviewTarget(c *gin.Context) (role.Actor, uint, bool) {
+	actor, err := utilhttp.ActorFrom(c.Request.Context())
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return role.Actor{}, 0, false
+	}
+
+	id, err := parseIDParam(c, "bugId")
+	if err != nil {
+		middleware.HandleError(c, err, h.logger)
+		return role.Actor{}, 0, false
+	}
+	return actor, id, true
 }
 
 // GetBug отдаёт подробности бага, над которым идёт работа.

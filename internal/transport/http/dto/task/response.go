@@ -91,7 +91,7 @@ func NewTaskListResponse(result task_action.TaskListResult) TaskListResponse {
 	}
 }
 
-// BugResponse — баг в перечне для привязки к задаче.
+// BugResponse — баг в перечне: для привязки к задаче или для проверки.
 type BugResponse struct {
 	ID          uint      `json:"id"`
 	Title       string    `json:"title"`
@@ -102,6 +102,13 @@ type BugResponse struct {
 	Build       string    `json:"build,omitempty"`
 	HasLogs     bool      `json:"hasLogs"`
 	CreatedAt   time.Time `json:"createdAt"`
+
+	// Итог проверки разработчиком. Есть в перечне, а не только в
+	// карточке: отклонённые без причины не разобрать, а пояснение к
+	// подтверждённому нужно ещё до того, как баг возьмут в работу.
+	ReviewedAt    *time.Time `json:"reviewedAt,omitempty"`
+	RejectReason  string     `json:"rejectReason,omitempty"`
+	ReviewComment string     `json:"reviewComment,omitempty"`
 }
 
 // BugDetailResponse — баг целиком: обстановка воспроизведения и логи.
@@ -150,10 +157,14 @@ func NewBugResponse(result task_action.BugResult) BugResponse {
 		Build:       result.Build,
 		HasLogs:     result.HasLogs,
 		CreatedAt:   result.CreatedAt,
+
+		ReviewedAt:    result.ReviewedAt,
+		RejectReason:  result.RejectReason,
+		ReviewComment: result.ReviewComment,
 	}
 }
 
-// BugListResponse — перечень багов, доступных для привязки.
+// BugListResponse — перечень багов.
 type BugListResponse struct {
 	Items []BugResponse `json:"items"`
 	Total int           `json:"total"`

@@ -289,6 +289,9 @@ type fakeBugs struct {
 	// synced хранит последний перенесённый статус по задаче.
 	synced map[uint]BugSync
 
+	// reviews — решения, дошедшие до каталога, в порядке поступления.
+	reviews []BugReview
+
 	// err подменяет ответ каталога, когда тест проверяет отказ.
 	err error
 }
@@ -330,6 +333,38 @@ func (f *fakeBugs) Get(_ context.Context, bugID uint) (Bug, error) {
 		}
 	}
 	return Bug{}, ErrBugUnavailable(nil)
+}
+
+// Confirm, Reject и Reopen отвечают тем же багом со сменённым
+// состоянием: правила переходов живут в feedback-service, и тесты
+// домена задач проверяют только то, что решение до него доходит.
+func (f *fakeBugs) Confirm(_ context.Context, review BugReview) (Bug, error) {
+	return f.review(review.BugID, BugStatusConfirmed, review)
+}
+
+func (f *fakeBugs) Reject(_ context.Context, review BugReview) (Bug, error) {
+	return f.review(review.BugID, BugStatusRejected, review)
+}
+
+func (f *fakeBugs) Reopen(_ context.Context, bugID uint) (Bug, error) {
+	return f.review(bugID, BugStatusNew, BugReview{})
+}
+
+func (f *fakeBugs) review(bugID uint, status string, review BugReview) (Bug, error) {
+	if f.err != nil {
+		return Bug{}, f.err
+	}
+	f.reviews = append(f.reviews, review)
+
+	for i := range f.open {
+		if f.open[i].ID == bugID {
+			f.open[i].Status = status
+			f.open[i].RejectReason = review.Reason
+			f.open[i].ReviewComment = review.Comment
+			return f.open[i], nil
+		}
+	}
+	return Bug{}, ErrBugNotFound(bugID)
 }
 
 func (f *fakeBugs) Link(_ context.Context, bugID, taskID uint) error {

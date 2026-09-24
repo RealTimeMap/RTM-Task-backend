@@ -73,7 +73,23 @@ type ListTasksQuery struct {
 }
 
 // ListBugsQuery — параметры перечня багов, доступных для привязки.
+//
+// Status выбирает перечень: пусто — подтверждённые баги для привязки,
+// new — очередь проверки, rejected — отклонённые.
 type ListBugsQuery struct {
-	Tag   string `form:"tag" binding:"omitempty,oneof=feature ui logic"`
-	Limit int    `form:"limit"`
+	Tag    string `form:"tag" binding:"omitempty,oneof=feature ui logic"`
+	Status string `form:"status" binding:"omitempty,oneof=new confirmed rejected"`
+	Limit  int    `form:"limit"`
+}
+
+// ConfirmBugRequest — подтверждение бага. Тело необязательно.
+type ConfirmBugRequest struct {
+	// Comment — как баг воспроизвёлся: пригодится тому, кто возьмёт задачу.
+	Comment string `json:"comment"`
+}
+
+// RejectBugRequest — отклонение бага. Причину проверяет домен.
+type RejectBugRequest struct {
+	Reason  string `json:"reason" binding:"required"`
+	Comment string `json:"comment"`
 }

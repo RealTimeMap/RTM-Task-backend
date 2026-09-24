@@ -19,6 +19,14 @@ type BugReader interface {
 	GetBug(ctx context.Context, taskID uint) (task.Bug, error)
 }
 
+// BugReviewer — часть домена, через которую разработчик выносит решение
+// по отчёту: подтверждает, отклоняет или возвращает на проверку.
+type BugReviewer interface {
+	ConfirmBug(ctx context.Context, actor role.Actor, review task.BugReview) (task.Bug, error)
+	RejectBug(ctx context.Context, actor role.Actor, review task.BugReview) (task.Bug, error)
+	ReopenBug(ctx context.Context, actor role.Actor, bugID uint) (task.Bug, error)
+}
+
 // BugLinker — часть домена, управляющая привязкой бага к задаче.
 type BugLinker interface {
 	AttachBug(ctx context.Context, actor role.Actor, id, bugID uint) (*task.Task, error)
@@ -49,6 +57,11 @@ type BugResult struct {
 
 	// ReporterID — кто прислал отчёт. Пусто, если баг анонимный.
 	ReporterID *uint
+
+	// Итог проверки разработчиком. Пусто, пока отчёт не проверен.
+	ReviewedAt    *time.Time
+	RejectReason  string
+	ReviewComment string
 }
 
 func toBugResult(obj task.Bug) BugResult {
@@ -69,6 +82,10 @@ func toBugResult(obj task.Bug) BugResult {
 		Battery:     obj.Battery,
 		Logs:        obj.Logs,
 		ReporterID:  obj.ReporterID,
+
+		ReviewedAt:    obj.ReviewedAt,
+		RejectReason:  string(obj.RejectReason),
+		ReviewComment: obj.ReviewComment,
 	}
 }
 
@@ -81,8 +98,24 @@ func toBugResults(objs []task.Bug) []BugResult {
 }
 
 type ListBugsQuery struct {
-	Tag   string
-	Limit int
+	Tag string
+	// Status — очередь проверки (new) или отклонённые (rejected).
+	// Пусто — подтверждённые баги, которые можно взять в задачу.
+	Status string
+	Limit  int
+}
+
+// ReviewBugCommand — решение по отчёту. Reason нужен только отклонению.
+type ReviewBugCommand struct {
+	Actor   role.Actor
+	BugID   uint
+	Reason  string
+	Comment string
+}
+
+type ReopenBugCommand struct {
+	Actor role.Actor
+	BugID uint
 }
 
 // GetBugQuery — запрос подробностей бага, привязанного к задаче.
@@ -108,11 +141,12 @@ type DetachBugCommand struct {
 	TaskID uint
 }
 
-// BugHandler обслуживает работу с багами: перечень для привязки и саму
-// привязку. Один обработчик на три операции — у них общий домен и общий
-// смысл, а разносить их значило бы трижды повторить конструктор.
+// BugHandler обслуживает работу с багами: перечень, проверку отчётов и
+// привязку к задачам. Один обработчик на все операции — у них общий
+// домен и общий смысл, а разносить их значило бы повторять конструктор.
 type BugHandler struct {
 	bugs      BugReader
+	reviewer  BugReviewer
 	tasks     BugLinker
 	summaries TaskSummarizer
 	publisher EventPublisher
@@ -121,6 +155,7 @@ type BugHandler struct {
 
 func NewBugHandler(
 	bugs BugReader,
+	reviewer BugReviewer,
 	tasks BugLinker,
 	summaries TaskSummarizer,
 	publisher EventPublisher,
@@ -128,6 +163,7 @@ func NewBugHandler(
 ) *BugHandler {
 	return &BugHandler{
 		bugs:      bugs,
+		reviewer:  reviewer,
 		tasks:     tasks,
 		summaries: summaries,
 		publisher: publisher,
@@ -135,11 +171,13 @@ func NewBugHandler(
 	}
 }
 
-// List отдаёт перечень багов, которые можно взять в работу.
+// List отдаёт перечень свободных багов: готовых к работе, ждущих
+// проверки или отклонённых — по Status.
 func (h *BugHandler) List(ctx context.Context, query ListBugsQuery) ([]BugResult, error) {
 	objs, err := h.bugs.ListOpenBugs(ctx, task.BugFilter{
-		Tag:   query.Tag,
-		Limit: query.Limit,
+		Tag:    query.Tag,
+		Status: query.Status,
+		Limit:  query.Limit,
 	})
 	if err != nil {
 		return nil, err
@@ -153,6 +191,42 @@ func (h *BugHandler) Get(ctx context.Context, query GetBugQuery) (BugResult, err
 	if err != nil {
 		return BugResult{}, err
 	}
+	return toBugResult(obj), nil
+}
+
+// Confirm фиксирует, что баг воспроизвёлся: он уходит из очереди
+// проверки в перечень готовых к работе.
+func (h *BugHandler) Confirm(ctx context.Context, cmd ReviewBugCommand) (BugResult, error) {
+	obj, err := h.reviewer.ConfirmBug(ctx, cmd.Actor, task.BugReview{
+		BugID:   cmd.BugID,
+		Comment: cmd.Comment,
+	})
+	return h.reviewed(ctx, obj, err)
+}
+
+// Reject фиксирует, что проверка баг не подтвердила.
+func (h *BugHandler) Reject(ctx context.Context, cmd ReviewBugCommand) (BugResult, error) {
+	obj, err := h.reviewer.RejectBug(ctx, cmd.Actor, task.BugReview{
+		BugID:   cmd.BugID,
+		Reason:  task.BugRejectReason(cmd.Reason),
+		Comment: cmd.Comment,
+	})
+	return h.reviewed(ctx, obj, err)
+}
+
+// Reopen возвращает баг на повторную проверку.
+func (h *BugHandler) Reopen(ctx context.Context, cmd ReopenBugCommand) (BugResult, error) {
+	obj, err := h.reviewer.ReopenBug(ctx, cmd.Actor, cmd.BugID)
+	return h.reviewed(ctx, obj, err)
+}
+
+// reviewed завершает решение по отчёту: баг сменил перечень, и у всех,
+// кто смотрит на очередь или на готовые к работе, картина устарела.
+func (h *BugHandler) reviewed(ctx context.Context, obj task.Bug, err error) (BugResult, error) {
+	if err != nil {
+		return BugResult{}, err
+	}
+	publishBugsChanged(ctx, h.publisher)
 	return toBugResult(obj), nil
 }
 

@@ -100,7 +100,7 @@ func MustContainer(cfg *config.Config, db *gorm.DB, log *zap.Logger) *Container 
 		UnassignTask: task_action.NewUnassignTaskHandler(taskService, publisher, log),
 		DeleteTask:   task_action.NewDeleteTaskHandler(taskService, publisher, log),
 
-		Bugs:      task_action.NewBugHandler(taskService, taskService, taskService, publisher, log),
+		Bugs: task_action.NewBugHandler(taskService, taskService, taskService, taskService, publisher, log),
 
 		Comments:  task_action.NewCommentHandler(taskService, publisher, log),
 		Checklist: task_action.NewChecklistHandler(taskService, publisher, log),

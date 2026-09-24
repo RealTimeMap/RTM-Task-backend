@@ -122,6 +122,36 @@ var (
 		)
 	}
 
+	// ErrBugNotFound — каталог не знает такого бага: его удалили или
+	// номер указан неверно.
+	ErrBugNotFound = func(bugID uint) error {
+		return apperror.NewNotFoundError("bug", bugID)
+	}
+
+	// ErrBugConflict передаёт отказ каталога, вызванный состоянием бага:
+	// его ещё не подтвердили, уже отклонили или забрали в другую задачу.
+	// Текст — от каталога: правила переходов живут там, и пересказывать
+	// их здесь значило бы разойтись с ними при первой же правке.
+	ErrBugConflict = func(message string) error {
+		return apperror.NewConflictError("bugId", message)
+	}
+
+	// ErrBugRejectReasonInvalid — причина отклонения не из набора
+	// feedback-service.
+	ErrBugRejectReasonInvalid = func(reason string) error {
+		return apperror.NewValidationError(
+			"reason",
+			"must be one of: not_reproducible, not_a_bug, duplicate, insufficient_info, spam",
+			"value_error.enum",
+			reason,
+		)
+	}
+
+	// ErrBugReviewCommentTooLong — пояснение длиннее, чем примет каталог.
+	ErrBugReviewCommentTooLong = func(value string) error {
+		return apperror.NewTooLongError("comment", maxBugReviewCommentLength, value)
+	}
+
 	ErrVersionConflict = func(id uint) error {
 		return apperror.NewConflictError(
 			"version",
@@ -261,6 +291,12 @@ var (
 	ErrCreateForbidden = func(role string) error {
 		return apperror.NewForbiddenError(
 			fmt.Sprintf("role %q is not allowed to create tasks", role),
+		)
+	}
+
+	ErrBugReviewForbidden = func(role string) error {
+		return apperror.NewForbiddenError(
+			fmt.Sprintf("role %q is not allowed to review bugs", role),
 		)
 	}
 
