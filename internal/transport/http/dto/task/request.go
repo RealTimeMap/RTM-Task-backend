@@ -10,7 +10,7 @@ type CreateTaskRequest struct {
 
 	// Project — продукт, в который направлена задача.
 	// Пусто означает проект по умолчанию.
-	Project string `json:"project" binding:"omitempty,oneof=rtm-task rtm-app"`
+	Project string `json:"project" binding:"omitempty,oneof=rtm-task rtm-app rtm-admin"`
 
 	// BugID — баг из feedback-service, который берут в работу.
 	// Допустим только вместе с type=bug.
@@ -29,7 +29,7 @@ type UpdateTaskRequest struct {
 	Description *string `json:"description"`
 	Type        *string `json:"type" binding:"omitempty,oneof=bug feature fix refactor update"`
 	Priority    *int    `json:"priority" binding:"omitempty,oneof=10 20 30 40"`
-	Project     *string `json:"project" binding:"omitempty,oneof=rtm-task rtm-app"`
+	Project     *string `json:"project" binding:"omitempty,oneof=rtm-task rtm-app rtm-admin"`
 }
 
 // AttachBugRequest — тело запроса на привязку бага к задаче.
@@ -59,7 +59,7 @@ type ListTasksQuery struct {
 	Status     *string `form:"status" binding:"omitempty,oneof=new working review complete"`
 	Type       *string `form:"type" binding:"omitempty,oneof=bug feature fix refactor update"`
 	Priority   *int    `form:"priority" binding:"omitempty,oneof=10 20 30 40"`
-	Project    *string `form:"project" binding:"omitempty,oneof=rtm-task rtm-app"`
+	Project    *string `form:"project" binding:"omitempty,oneof=rtm-task rtm-app rtm-admin"`
 	CreatorID  *uint   `form:"creatorId"`
 	AssigneeID *uint   `form:"assigneeId"`
 	Unassigned bool    `form:"unassigned"`

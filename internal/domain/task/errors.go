@@ -183,7 +183,7 @@ var (
 	ErrInvalidProject = func(value string) error {
 		return apperror.NewValidationError(
 			"project",
-			"must be one of: rtm-task, rtm-app",
+			"must be one of: rtm-task, rtm-app, rtm-admin",
 			"value_error.invalid_choice",
 			value,
 		)

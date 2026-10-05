@@ -30,14 +30,15 @@ func (t Type) String() string { return string(t) }
 
 // Project — продукт, к которому относится задача.
 //
-// Список закрыт и живёт в домене: проектов ровно два, и заводить ради
-// них справочник в базе значило бы поддерживать таблицу из двух строк
+// Список закрыт и живёт в домене: проектов всего несколько, и заводить ради
+// них справочник в базе значило бы поддерживать крошечную таблицу
 // вместе с CRUD, миграциями и проверками целостности.
 type Project string
 
 const (
-	TaskProject Project = "rtm-task"
-	AppProject  Project = "rtm-app"
+	TaskProject  Project = "rtm-task"
+	AppProject   Project = "rtm-app"
+	AdminProject Project = "rtm-admin"
 )
 
 // DefaultProject — куда попадает задача, если проект не указали.
@@ -46,7 +47,7 @@ const DefaultProject = TaskProject
 
 func (p Project) IsValid() bool {
 	switch p {
-	case TaskProject, AppProject:
+	case TaskProject, AppProject, AdminProject:
 		return true
 	default:
 		return false
